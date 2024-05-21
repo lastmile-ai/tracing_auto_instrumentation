@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+
+[project]
+name = "tracing_auto_instrumentation"
+version = "0.0.1"
+authors = [
+  { name="LastMile AI" },
+]
+description = ""
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+]
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[project.urls]
+"Homepage" = "https://github.com/lastmile-ai/tracing_auto_instrumentation"
+"Bug Tracker" = "https://github.com/lastmile-ai/tracing_auto_instrumentation/issues"
+
+
+# Black formatting
+[tool.black]
+line-length = 79
+include = '\.pyi?$'
+exclude = '''
+/(
+      .eggs         # exclude a few common directories in the
+    | .git          # root of the project
+    | .hg
+    | .mypy_cache
+    | .tox
+    | venv
+    | buck-out
+    | dist
+  )/
+'''

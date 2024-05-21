@@ -1,0 +1,9 @@
+{
+  "typeCheckingMode": "strict",
+  "include": ["src", "tests", "examples"],
+  "exclude": [],
+  "ignore": [],
+  "venv": "tracing_auto_instrumentation",
+  "pythonVersion": "3.10",
+  "reportMissingTypeStubs": false
+}
