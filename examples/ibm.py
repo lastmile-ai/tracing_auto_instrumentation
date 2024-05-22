@@ -1,9 +1,7 @@
 import argparse
 import dotenv
 import logging
-import openai
 import os
-import pandas as pd
 import sys
 
 from enum import Enum
