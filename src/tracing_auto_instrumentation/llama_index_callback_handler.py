@@ -2,25 +2,25 @@ import logging
 from time import time_ns
 from typing import Any, Dict, Optional
 
-from llama_index.core.callbacks import CBEventType, EventPayload
-from openinference.instrumentation.llama_index._callback import (
-    OpenInferenceTraceCallbackHandler,
-    payload_to_semantic_attributes,
-    _is_streaming_response,
-    _flatten,
-    _ResponseGen,
-    _EventData,
-)
-from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry import trace as trace_api
-from opentelemetry import context as context_api
-from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY
-from typing_extensions import TypeAlias
-from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
 from lastmile_eval.rag.debugger.common.utils import (
     DEFAULT_PROJECT_NAME,
     LASTMILE_SPAN_KIND_KEY_NAME,
 )
+from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
+from llama_index.core.callbacks import CBEventType, EventPayload
+from openinference.instrumentation.llama_index._callback import (
+    OpenInferenceTraceCallbackHandler,
+    _EventData,
+    _flatten,
+    _is_streaming_response,
+    _ResponseGen,
+    payload_to_semantic_attributes,
+)
+from opentelemetry import context as context_api
+from opentelemetry import trace as trace_api
+from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY
+from opentelemetry.sdk.trace import ReadableSpan
+from typing_extensions import TypeAlias
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

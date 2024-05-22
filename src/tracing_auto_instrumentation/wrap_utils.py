@@ -1,7 +1,6 @@
 import json
 from typing import Any, Generic, TypeVar
 
-
 T_INV = TypeVar("T_INV")
 
 

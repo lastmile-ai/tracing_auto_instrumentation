@@ -1,12 +1,13 @@
 import time
 from typing import Any, Mapping
-import openai as openai_module
 
-from lastmile_eval.rag.debugger.tracing.lastmile_tracer import LastMileTracer
+import openai as openai_module
 from lastmile_eval.rag.debugger.common.query_trace_types import (
     LLMOutputReceived,
     PromptResolved,
 )
+from lastmile_eval.rag.debugger.tracing.lastmile_tracer import LastMileTracer
+
 from tracing_auto_instrumentation.wrap_utils import (
     NamedWrapper,
     json_serialize_anything,
@@ -131,7 +132,7 @@ class ChatCompletionWrapper:
                     self.tracer.mark_rag_query_trace_event(
                         LLMOutputReceived(llm_output=output)
                     )
-                except Exception as e:
+                except Exception:
                     # TODO log this
                     pass
                 return raw_response
@@ -197,7 +198,7 @@ class ChatCompletionWrapper:
                     self.tracer.mark_rag_query_trace_event(
                         LLMOutputReceived(llm_output=output)
                     )
-                except Exception as e:
+                except Exception:
                     # TODO log this
                     pass
                 return raw_response
@@ -227,7 +228,7 @@ class EmbeddingWrapper:
 
     def create(self, *args, **kwargs):
         params = self._parse_params(kwargs)
-        params_flat = flatten_json(params)
+        flatten_json(params)
 
         with self.tracer.start_as_current_span("embedding") as span:
             raw_response = self.create_fn(*args, **kwargs)
