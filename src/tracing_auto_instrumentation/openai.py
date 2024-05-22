@@ -7,7 +7,7 @@ from lastmile_eval.rag.debugger.common.query_trace_types import (
     LLMOutputReceived,
     PromptResolved,
 )
-from lastmile_eval.rag.debugger.tracing.wrap_utils import (
+from tracing_auto_instrumentation.wrap_utils import (
     NamedWrapper,
     json_serialize_anything,
 )
