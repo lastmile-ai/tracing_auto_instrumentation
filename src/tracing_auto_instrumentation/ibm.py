@@ -1,18 +1,14 @@
 import inspect
 import json
-import os
 from abc import abstractmethod
 from typing import Any, Protocol
-import dotenv
 from ibm_watsonx_ai.foundation_models import Model
-from ibm_watsonx_ai.foundation_models.utils.enums import ModelTypes
-from ibm_watsonx_ai.metanames import GenTextParamsMetaNames as GenParams
 from lastmile_eval.rag.debugger.api import LastMileTracer
 from lastmile_eval.rag.debugger.tracing.decorators import (
     _get_serializable_input,
     _try_log_output,
 )
-from lastmile_eval.rag.debugger.tracing.wrap_utils import (
+from .wrap_utils import (
     NamedWrapper,
 )
 

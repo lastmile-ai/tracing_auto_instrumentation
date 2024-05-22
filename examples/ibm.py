@@ -4,9 +4,7 @@ from ibm_watsonx_ai.foundation_models import Model
 from ibm_watsonx_ai.foundation_models.utils.enums import ModelTypes
 from ibm_watsonx_ai.metanames import GenTextParamsMetaNames as GenParams
 from lastmile_eval.rag.debugger.tracing.sdk import get_lastmile_tracer
-from lastmile_eval.rag.debugger.tracing.auto_instrumentation.ibm import (
-    wrap_watson,
-)
+from tracing_auto_instrumentation.ibm import wrap_watson
 
 print("Generate")
 
@@ -33,8 +31,8 @@ tracer = get_lastmile_tracer(
     "elementary-my-dear-watson", os.getenv("LASTMILE_API_TOKEN")
 )
 wrapper = wrap_watson(model, tracer)
-# response = wrapper.generate("the quick brown fox")
-# print(response)
+response = wrapper.generate("This is the generate call")
+print(response)
 
-# response = wrapper.generate_text("the quick brown fox")
-# print(response)
+response = wrapper.generate_text("this is the generate text call")
+print(response)
