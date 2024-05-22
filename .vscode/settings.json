@@ -1,0 +1,25 @@
+{
+  "editor.formatOnSave": true,
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.formatOnSave": true,
+    "editor.rulers": []
+  },
+  "black-formatter.args": ["--line-length=79"],
+  "search.exclude": {
+    "**/build": true,
+    "**/node_modules": true,
+    "**/.sl": true,
+    "yarn.lock": true,
+    "yarn-error.log": true
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
+}
