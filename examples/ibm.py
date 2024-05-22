@@ -1,15 +1,13 @@
 import argparse
-import dotenv
 import logging
 import os
 import sys
-
 from enum import Enum
 
+import dotenv
 from ibm_watsonx_ai.foundation_models import Model
 from ibm_watsonx_ai.foundation_models.utils.enums import ModelTypes
 from ibm_watsonx_ai.metanames import GenTextParamsMetaNames as GenParams
-
 from lastmile_eval.rag.debugger.api import LastMileTracer
 from lastmile_eval.rag.debugger.tracing.sdk import get_lastmile_tracer
 

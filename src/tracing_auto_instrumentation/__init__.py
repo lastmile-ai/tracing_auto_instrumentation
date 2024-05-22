@@ -1,9 +1,6 @@
-from .llama_index_callback_handler import (
-    LlamaIndexCallbackHandler,
-)
-
-from .langchain_instrumentor import LangChainInstrumentor
 from .ibm import wrap_watson
+from .langchain_instrumentor import LangChainInstrumentor
+from .llama_index_callback_handler import LlamaIndexCallbackHandler
 from .openai import wrap_openai
 
 __ALL__ = [

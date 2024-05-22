@@ -1,31 +1,29 @@
 import logging
-from typing import Any, Dict, Callable, Collection, Optional, Type
+from typing import Any, Callable, Collection, Dict, Optional, Type
 
 from langchain_core.callbacks import BaseCallbackManager
 from langchain_core.tracers.schemas import Run
+from lastmile_eval.rag.debugger.common.utils import (
+    DEFAULT_PROJECT_NAME,
+    LASTMILE_SPAN_KIND_KEY_NAME,
+)
+
+# TODO: Fix typing
+from lastmile_eval.rag.debugger.tracing.sdk import get_lastmile_tracer
 from openinference.instrumentation.langchain._tracer import (
     OpenInferenceTracer,
     _as_utc_nano,
     _update_span,
 )
 from openinference.instrumentation.langchain.package import _instruments
-from openinference.instrumentation.langchain.version import __version__
 from opentelemetry import context as context_api
 from opentelemetry import trace as trace_api
 from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY
-from opentelemetry.sdk.trace import Span
-from opentelemetry.instrumentation.instrumentor import (
+from opentelemetry.instrumentation.instrumentor import (  # type: ignore
     BaseInstrumentor,
-)  # type: ignore
-from wrapt import wrap_function_wrapper
-
-# TODO: Fix typing
-from lastmile_eval.rag.debugger.tracing.sdk import get_lastmile_tracer
-
-from lastmile_eval.rag.debugger.common.utils import (
-    DEFAULT_PROJECT_NAME,
-    LASTMILE_SPAN_KIND_KEY_NAME,
 )
+from opentelemetry.sdk.trace import Span
+from wrapt import wrap_function_wrapper
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -58,7 +56,6 @@ class LangChainInstrumentor(BaseInstrumentor):
         return _instruments
 
     def _instrument(self, **kwargs: Any) -> None:
-
         wrap_function_wrapper(
             module="langchain_core.callbacks",
             name="BaseCallbackManager.__init__",
