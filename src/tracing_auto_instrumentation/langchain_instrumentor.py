@@ -22,7 +22,10 @@ from wrapt import wrap_function_wrapper
 # TODO: Fix typing
 from lastmile_eval.rag.debugger.tracing.sdk import get_lastmile_tracer
 
-from ...common.utils import DEFAULT_PROJECT_NAME, LASTMILE_SPAN_KIND_KEY_NAME
+from lastmile_eval.rag.debugger.common.utils import (
+    DEFAULT_PROJECT_NAME,
+    LASTMILE_SPAN_KIND_KEY_NAME,
+)
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
