@@ -1,27 +1,21 @@
-import logging
 import inspect
 import json
-
+import logging
 from abc import abstractmethod
 from typing import Any, Protocol
 
 from ibm_watsonx_ai.foundation_models import Model
-
 from lastmile_eval.rag.debugger.api import LastMileTracer
+from lastmile_eval.rag.debugger.common.query_trace_types import (
+    LLMOutputReceived,
+    PromptResolved,
+)
 from lastmile_eval.rag.debugger.tracing.decorators import (
     _get_serializable_input,
     _try_log_output,
 )
 
-from lastmile_eval.rag.debugger.common.query_trace_types import (
-    LLMOutputReceived,
-    PromptResolved,
-)
-
-
-from .wrap_utils import (
-    NamedWrapper,
-)
+from .wrap_utils import NamedWrapper
 
 logger = logging.getLogger(__name__)
 
