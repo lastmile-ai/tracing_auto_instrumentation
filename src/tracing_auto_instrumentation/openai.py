@@ -433,3 +433,6 @@ def wrap(
         return OpenAIV1Wrapper(openai, tracer)
     else:
         return OpenAIV0Wrapper(openai, tracer)
+
+
+wrap_openai = wrap
