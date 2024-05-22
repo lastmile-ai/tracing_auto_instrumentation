@@ -52,14 +52,14 @@ def run_generate(prompt: str, trace_name: str) -> None:
 
     watson_model: Model = init_watson_model()
 
-    logger.info("start lastmile wrap...")
+    tracer.log("start lastmile wrap...")
     wrapper = wrap_watson(watson_model, tracer)
-    logger.info("lastmile wrap complete.")
+    tracer.log("lastmile wrap complete.")
 
     with tracer.start_as_current_span(trace_name) as span:
-        logger.info("start watsonx generate...")
+        tracer.log("start watsonx generate...")
         response = wrapper.generate(prompt)
-        logger.info(f"watsonx generate: {response=}")
+        tracer.log(f"watsonx generate: {response=}")
 
 
 def run_generate_text(prompt: str, trace_name: str) -> None:
@@ -69,14 +69,14 @@ def run_generate_text(prompt: str, trace_name: str) -> None:
 
     watson_model: Model = init_watson_model()
 
-    logger.info("start lastmile wrap...")
+    tracer.log("start lastmile wrap...")
     wrapper = wrap_watson(watson_model, tracer)
-    logger.info("lastmile wrap complete.")
+    tracer.log("lastmile wrap complete.")
 
     with tracer.start_as_current_span(trace_name) as span:
-        logger.info("start watsonx generate_text...")
+        tracer.log("start watsonx generate_text...")
         response = wrapper.generate_text(prompt)
-        logger.info(f"watsonx generate_text: {response=}")
+        tracer.log(f"watsonx generate_text: {response=}")
 
 
 def main():

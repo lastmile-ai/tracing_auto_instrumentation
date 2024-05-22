@@ -112,14 +112,6 @@ class GenerateTextWrapper:
             )
             return response
 
-        # with self.tracer.start_as_current_span("text-generate-span") as span:
-
-        #     raw_response = self.generate_fn(*args, **kwargs)
-        #     self.tracer.mark_rag_query_trace_event(
-        #         event=LLMOutputReceived(llm_output="xyz")
-        #     )
-        #     return raw_response
-
 
 class IBMWatsonXModelWrapper(NamedWrapper[Model]):
     def __init__(self, ibm_watsonx_model: Model, tracer: LastMileTracer):
@@ -200,7 +192,8 @@ def wrap_watson(
     the methods `generate`, `generate_text`, and `generate_text_stream`.
 
     To use it, wrap it around an existing Model and tracer object like so:
-    ```
+
+    ```python
     from ibm_watsonx_ai.foundation_models import Model
     from ibm_watsonx_ai.metanames import (
         GenTextParamsMetaNames as GenParams,
@@ -227,5 +220,6 @@ def wrap_watson(
     )
     wrapped_model = wrap_watson(tracer, model)
     ```
+
     """
     return IBMWatsonXModelWrapper(ibm_watsonx_model, tracer)
