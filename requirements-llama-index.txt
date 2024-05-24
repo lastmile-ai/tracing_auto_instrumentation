@@ -1,0 +1,5 @@
+llama-index
+llama-index-embeddings-openai
+llama-index-readers-web
+llama-index-callbacks-openinference
+openinference-instrumentation-llama-index

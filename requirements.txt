@@ -1,21 +1,6 @@
+# Common dependencies
 lastmile_eval
-
-ibm-watsonx-ai
-openai
-
-# Integrations with other LLM frameworks
-llama-index
-llama-index-embeddings-openai
-llama-index-readers-web
-llama-index-callbacks-openinference
-openai
-html2text 
-pandas 
-pyarrow 
-tqdm
-openinference-instrumentation-llama-index
-openinference-instrumentation-langchain
-langchain
-langchain_core
-langchain_openai
-ibm_watsonx_ai
+# html2text
+# pandas
+# pyarrow
+# tqdm
