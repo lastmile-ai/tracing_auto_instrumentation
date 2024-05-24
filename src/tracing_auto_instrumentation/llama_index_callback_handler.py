@@ -190,7 +190,9 @@ def _finish_tracing(
         if not _should_skip(event_type):
             serializable_payload: Dict[str, Any] = {}
             for key, value in span._attributes.items():
-                serializable_payload[key] = value
+                # Only save the opinionated data to event data and param set
+                if _save_to_param_set(key):
+                    serializable_payload[key] = value
             tracer.add_rag_event_for_span(
                 event_name=str(event_data.event_type),
                 span=span,
