@@ -14,10 +14,18 @@ classifiers = [
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
 ]
-dynamic = ["dependencies"]
+dynamic = ["dependencies", "optional-dependencies"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
+
+[optional-dependencies]
+ibm = {file = ["requirements-ibm.txt"]}
+langchain = {file = ["requirements-langchain.txt"]}
+llama_index = {file = ["requirements-llama-index.txt"]}
+openai = {file = ["requirements-openai.txt"]}
+ui = {file = ["requirements-ui.txt"]}
+
 
 [project.urls]
 "Homepage" = "https://github.com/lastmile-ai/tracing_auto_instrumentation"
