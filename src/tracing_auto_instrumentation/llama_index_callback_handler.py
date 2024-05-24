@@ -6,16 +6,35 @@ from llama_index.core.callbacks import CBEventType, EventPayload
 from openinference.instrumentation.llama_index._callback import (
     OpenInferenceTraceCallbackHandler,
     payload_to_semantic_attributes,
-    _is_streaming_response,
-    _flatten,
-    _ResponseGen,
-    _EventData,
+    _is_streaming_response,  # type: ignore
+    _flatten,  # type: ignore
+    _ResponseGen,  # type: ignore
+    _EventData,  # type: ignore
+    # Opinionated params we explicit want to save, see source for full list
+    DOCUMENT_SCORE,
+    EMBEDDING_MODEL_NAME,
+    INPUT_VALUE,
+    LLM_INVOCATION_PARAMETERS,
+    LLM_MODEL_NAME,
+    LLM_PROMPT_TEMPLATE,
+    MESSAGE_FUNCTION_CALL_NAME,
+    OUTPUT_VALUE,
+    RERANKER_MODEL_NAME,
+    RERANKER_OUTPUT_DOCUMENTS,
+    RERANKER_QUERY,
+    RERANKER_TOP_K,
+    RETRIEVAL_DOCUMENTS,
+    TOOL_CALL_FUNCTION_NAME,
+    TOOL_NAME,
+    # # Explicit chose not to do these two because context can be huge and we
+    # # can extract this from both the prompt template template and variables
+    # LLM_INPUT_MESSAGES,
+    # LLM_OUTPUT_MESSAGES,
 )
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry import trace as trace_api
 from opentelemetry import context as context_api
-from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY
-from typing_extensions import TypeAlias
+from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY  # type: ignore
 from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
 from lastmile_eval.rag.debugger.common.utils import (
     DEFAULT_PROJECT_NAME,
@@ -25,8 +44,23 @@ from lastmile_eval.rag.debugger.common.utils import (
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-_EventId: TypeAlias = str
-_ParentId: TypeAlias = str
+PARAM_SET_SUBSTRING_MATCHES = (
+    DOCUMENT_SCORE,
+    EMBEDDING_MODEL_NAME,
+    INPUT_VALUE,
+    LLM_INVOCATION_PARAMETERS,
+    LLM_MODEL_NAME,
+    LLM_PROMPT_TEMPLATE,
+    MESSAGE_FUNCTION_CALL_NAME,
+    OUTPUT_VALUE,
+    RERANKER_MODEL_NAME,
+    RERANKER_OUTPUT_DOCUMENTS,
+    RERANKER_QUERY,
+    RERANKER_TOP_K,
+    RETRIEVAL_DOCUMENTS,
+    TOOL_CALL_FUNCTION_NAME,
+    TOOL_NAME,
+)
 
 
 class LlamaIndexCallbackHandler(OpenInferenceTraceCallbackHandler):
@@ -156,11 +190,18 @@ def _finish_tracing(
         if not _should_skip(event_type):
             serializable_payload: Dict[str, Any] = {}
             for key, value in span._attributes.items():
-                serializable_payload[key] = value
+                # Only save the opinionated data to event data and param set
+                if _save_to_param_set(key):
+                    serializable_payload[key] = value
             tracer.add_rag_event_for_span(
                 event_name=str(event_data.event_type),
                 span=span,
                 event_data=serializable_payload,
+            )
+            tracer.register_params(
+                params=serializable_payload,
+                should_also_save_in_span=False,
+                span=span,
             )
 
         # Save span kind into span attribute, but don't add it to trace-level
@@ -184,3 +225,10 @@ def _should_skip(event_type: CBEventType) -> bool:
         CBEventType.TREE,
         CBEventType.SYNTHESIZE,
     }
+
+
+def _save_to_param_set(key: str):
+    for substring in PARAM_SET_SUBSTRING_MATCHES:
+        if substring in key:
+            return True
+    return False
