@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 
 [project]
 name = "tracing_auto_instrumentation"
-version = "0.0.3"
+version = "0.0.4"
 authors = [
   { name="LastMile AI" },
 ]
@@ -14,10 +14,17 @@ classifiers = [
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
 ]
-dynamic = ["dependencies"]
+dynamic = ["dependencies", "optional-dependencies"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.dynamic.optional-dependencies]
+ibm = {file = ["requirements-ibm.txt"]}
+langchain = {file = ["requirements-langchain.txt"]}
+llama-index = {file = ["requirements-llama-index.txt"]}
+openai = {file = ["requirements-openai.txt"]}
+
 
 [project.urls]
 "Homepage" = "https://github.com/lastmile-ai/tracing_auto_instrumentation"
