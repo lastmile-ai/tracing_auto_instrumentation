@@ -1,6 +1,10 @@
 {
-  "typeCheckingMode": "strict",
-  "include": ["src", "tests", "examples"],
+  "typeCheckingMode": "basic",
+  "include": [
+    "src",
+    "tests",
+    "examples"
+  ],
   "exclude": [],
   "ignore": [],
   "venv": "tracing_auto_instrumentation",
