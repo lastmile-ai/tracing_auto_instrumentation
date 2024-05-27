@@ -48,6 +48,9 @@ class LangChainInstrumentor(BaseInstrumentor):
         project_name: str = DEFAULT_PROJECT_NAME,
         lastmile_api_token: Optional[str] = None,
     ) -> None:
+        # Check deps
+
+
         super().__init__()
         self._tracer = get_lastmile_tracer(
             tracer_name=project_name,
