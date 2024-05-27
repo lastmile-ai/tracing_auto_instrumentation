@@ -13,7 +13,7 @@ from ibm_watsonx_ai.metanames import GenTextParamsMetaNames as GenParams
 from lastmile_eval.rag.debugger.api import LastMileTracer
 from lastmile_eval.rag.debugger.tracing.sdk import get_lastmile_tracer
 
-from tracing_auto_instrumentation.ibm import wrap_watson
+from tracing_auto_instrumentation.ibm.ibm import wrap_watson
 
 logger = logging.getLogger(__name__)
 
