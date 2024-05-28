@@ -1,9 +1,11 @@
 import json
 import time
 from typing import Any, Mapping, Optional
-import openai as openai_module
 
+import openai as openai_module
 from lastmile_eval.rag.debugger.api import LastMileTracer
+from pydantic import BaseModel
+
 from tracing_auto_instrumentation.wrap_utils import (
     NamedWrapper,
     json_serialize_anything,
@@ -77,8 +79,10 @@ class ChatCompletionWrapper:
             start = time.time()
             raw_response = self.create_fn(*args, **kwargs)
             if stream:
+                chunk_count = 1
+                print("stream is true")
 
-                def gen():
+                def gen(chunk_count: int):
                     first = True
                     all_results = []
                     for item in raw_response:
@@ -87,12 +91,16 @@ class ChatCompletionWrapper:
                                 "time_to_first_token", time.time() - start
                             )
                             first = False
+                        print(f"{chunk_count}: grepping a stupid item")
                         all_results.append(
                             item if isinstance(item, dict) else item.dict()
                         )
+                        chunk_count += 1
                         yield item
+                    print("fuck this stream, can't believe this wasn't tested")
 
                     stream_output = postprocess_streaming_results(all_results)
+                    print("ok fuck me I'm in create stream")
                     span.set_attributes(flatten_json(stream_output))
 
                     stream_content = stream_output["message"]["content"]
@@ -105,7 +113,7 @@ class ChatCompletionWrapper:
                         event_data=json.loads(rag_event_input),
                     )
 
-                return gen()
+                return gen(chunk_count)
 
             # Non-streaming part
             log_response = (
@@ -170,6 +178,7 @@ class ChatCompletionWrapper:
                         yield item
 
                     stream_output = postprocess_streaming_results(all_results)
+                    print("A FUCK me inside acreate stream")
                     span.set_attributes(flatten_json(stream_output))
 
                     stream_content = stream_output["message"]["content"]
