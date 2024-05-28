@@ -19,7 +19,7 @@ from lastmile_eval.rag.debugger.common.query_trace_types import (
 )
 
 
-from .wrap_utils import (
+from ..wrap_utils import (
     NamedWrapper,
 )
 
