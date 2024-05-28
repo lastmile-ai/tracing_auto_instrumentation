@@ -64,6 +64,8 @@ def postprocess_streaming_results(all_results: list[Any]) -> Mapping[str, Any]:
     }
 
 
+import json
+
 
 class ChatCompletionWrapper:
     def __init__(self, create_fn, acreate_fn, tracer: LastMileTracer):
@@ -76,6 +78,7 @@ class ChatCompletionWrapper:
         params_flat = flatten_json(params)
 
         with self.tracer.start_as_current_span("chat-completion-span") as span:
+
             self.tracer.mark_rag_query_trace_event(
                 PromptResolved(
                     fully_resolved_prompt=json_serialize_anything(params)
@@ -101,6 +104,11 @@ class ChatCompletionWrapper:
                         )
                         yield item
 
+                    # TODO: Save final output to the span
+                    print(f"{all_results=}")
+                    data = {"data": all_results}
+                    with open("output.txt", "w", encoding="utf-8") as f:
+                        f.write(json.dumps(data, indent=2))
                     stream_output = postprocess_streaming_results(all_results)
                     span.set_attribute(flatten_json(stream_output))
 
@@ -142,6 +150,8 @@ class ChatCompletionWrapper:
         stream = kwargs.get("stream", False)
 
         with self.tracer.start_as_current_span("chat-completion") as span:
+            # if "input"
+            # self.tracer.add_rag_event_for_span("resolved_prompt", span, )
             self.tracer.mark_rag_query_trace_event(
                 PromptResolved(
                     fully_resolved_prompt=json_serialize_anything(params)
@@ -169,6 +179,8 @@ class ChatCompletionWrapper:
                         )
                         yield item
 
+                    # TODO: Save final output to the span
+                    print(f"{all_results=}")
                     stream_output = postprocess_streaming_results(all_results)
                     span.set_attributes(flatten_json(stream_output))
 
