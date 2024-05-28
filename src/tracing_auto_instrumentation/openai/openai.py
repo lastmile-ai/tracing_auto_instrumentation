@@ -12,6 +12,8 @@ from tracing_auto_instrumentation.wrap_utils import (
     json_serialize_anything,
 )
 
+# pylint: disable=missing-function-docstring
+
 
 def flatten_json(obj: Mapping[str, Any]):
     return {k: json_serialize_anything(v) for k, v in obj.items()}
@@ -21,7 +23,7 @@ def merge_dicts(d1, d2):
     return {**d1, **d2}
 
 
-def postprocess_streaming_results(all_results):
+def postprocess_streaming_results(all_results: list[Any]) -> Mapping[str, Any]:
     role = None
     content = None
     tool_calls = None
@@ -50,18 +52,17 @@ def postprocess_streaming_results(all_results):
                     0
                 ]["function"]["arguments"]
 
-    return [
-        {
-            "index": 0,
-            "message": {
-                "role": role,
-                "content": content,
-                "tool_calls": tool_calls,
-            },
-            "logprobs": None,
-            "finish_reason": finish_reason,
-        }
-    ]
+    return {
+        "index": 0,
+        "message": {
+            "role": role,
+            "content": content,
+            "tool_calls": tool_calls,
+        },
+        "logprobs": None,
+        "finish_reason": finish_reason,
+    }
+
 
 
 class ChatCompletionWrapper:
