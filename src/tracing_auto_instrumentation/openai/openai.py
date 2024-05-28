@@ -1,12 +1,9 @@
+import json
 import time
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 import openai as openai_module
 
-from lastmile_eval.rag.debugger.tracing.lastmile_tracer import LastMileTracer
-from lastmile_eval.rag.debugger.common.query_trace_types import (
-    LLMOutputReceived,
-    PromptResolved,
-)
+from lastmile_eval.rag.debugger.api import LastMileTracer
 from tracing_auto_instrumentation.wrap_utils import (
     NamedWrapper,
     json_serialize_anything,
@@ -64,7 +61,6 @@ def postprocess_streaming_results(all_results: list[Any]) -> Mapping[str, Any]:
     }
 
 
-
 class ChatCompletionWrapper:
     def __init__(self, create_fn, acreate_fn, tracer: LastMileTracer):
         self.create_fn = create_fn
@@ -74,15 +70,10 @@ class ChatCompletionWrapper:
     def create(self, *args, **kwargs):
         params = self._parse_params(kwargs)
         params_flat = flatten_json(params)
+        stream = kwargs.get("stream", False)
 
+        rag_event_input = json_serialize_anything(params)
         with self.tracer.start_as_current_span("chat-completion-span") as span:
-            self.tracer.mark_rag_query_trace_event(
-                PromptResolved(
-                    fully_resolved_prompt=json_serialize_anything(params)
-                )
-            )
-            stream = kwargs.get("stream", False)
-
             start = time.time()
             raw_response = self.create_fn(*args, **kwargs)
             if stream:
@@ -102,52 +93,61 @@ class ChatCompletionWrapper:
                         yield item
 
                     stream_output = postprocess_streaming_results(all_results)
-                    span.set_attribute(flatten_json(stream_output))
+                    span.set_attributes(flatten_json(stream_output))
+
+                    stream_content = stream_output["message"]["content"]
+                    _add_rag_event_with_output(
+                        self.tracer,
+                        "chat_completion_create_stream",
+                        span,
+                        input=rag_event_input,
+                        output=stream_content,
+                        event_data=json.loads(rag_event_input),
+                    )
 
                 return gen()
-            else:
-                log_response = (
-                    raw_response
-                    if isinstance(raw_response, dict)
-                    else raw_response.dict()
+
+            # Non-streaming part
+            log_response = (
+                raw_response
+                if isinstance(raw_response, dict)
+                else raw_response.dict()
+            )
+            span.set_attributes(
+                {
+                    "time_to_first_token": time.time() - start,
+                    "tokens": log_response["usage"]["total_tokens"],
+                    "prompt_tokens": log_response["usage"]["prompt_tokens"],
+                    "completion_tokens": log_response["usage"][
+                        "completion_tokens"
+                    ],
+                    "choices": json_serialize_anything(
+                        log_response["choices"]
+                    ),
+                    **params_flat,
+                }
+            )
+            try:
+                output = log_response["choices"][0]["message"]["content"]
+                _add_rag_event_with_output(
+                    self.tracer,
+                    "chat_completion_create",
+                    span,
+                    input=rag_event_input,
+                    output=output,
+                    event_data=json.loads(rag_event_input),
                 )
-                span.set_attributes(
-                    {
-                        "time_to_first_token": time.time() - start,
-                        "tokens": log_response["usage"]["total_tokens"],
-                        "prompt_tokens": log_response["usage"][
-                            "prompt_tokens"
-                        ],
-                        "completion_tokens": log_response["usage"][
-                            "completion_tokens"
-                        ],
-                        "choices": json_serialize_anything(
-                            log_response["choices"]
-                        ),
-                        **params_flat,
-                    }
-                )
-                try:
-                    output = log_response["choices"][0]["message"]["content"]
-                    self.tracer.mark_rag_query_trace_event(
-                        LLMOutputReceived(llm_output=output)
-                    )
-                except Exception as e:
-                    # TODO log this
-                    pass
-                return raw_response
+            except Exception as e:
+                # TODO log this
+                pass
+            return raw_response
 
     async def acreate(self, *args, **kwargs):
         params = self._parse_params(kwargs)
         stream = kwargs.get("stream", False)
 
+        rag_event_input = json_serialize_anything(params)
         with self.tracer.start_as_current_span("chat-completion") as span:
-            self.tracer.mark_rag_query_trace_event(
-                PromptResolved(
-                    fully_resolved_prompt=json_serialize_anything(params)
-                )
-            )
-
             span.set_attributes(flatten_json(params))
             start = time.time()
             raw_response = await self.acreate_fn(*args, **kwargs)
@@ -172,36 +172,50 @@ class ChatCompletionWrapper:
                     stream_output = postprocess_streaming_results(all_results)
                     span.set_attributes(flatten_json(stream_output))
 
-                return gen()
-            else:
-                log_response = (
-                    raw_response
-                    if isinstance(raw_response, dict)
-                    else raw_response.dict()
-                )
-                span.set_attributes(
-                    {
-                        "tokens": log_response["usage"]["total_tokens"],
-                        "prompt_tokens": log_response["usage"][
-                            "prompt_tokens"
-                        ],
-                        "completion_tokens": log_response["usage"][
-                            "completion_tokens"
-                        ],
-                        "choices": json_serialize_anything(
-                            log_response["choices"]
-                        ),
-                    }
-                )
-                try:
-                    output = log_response["choices"][0]["message"]["content"]
-                    self.tracer.mark_rag_query_trace_event(
-                        LLMOutputReceived(llm_output=output)
+                    stream_content = stream_output["message"]["content"]
+                    _add_rag_event_with_output(
+                        self.tracer,
+                        "chat_completion_acreate_stream",
+                        span,
+                        input=rag_event_input,
+                        output=stream_content,  # type: ignore
+                        event_data=json.loads(rag_event_input),
                     )
-                except Exception as e:
-                    # TODO log this
-                    pass
-                return raw_response
+
+                return gen()
+
+            # Non-streaming part
+            log_response = (
+                raw_response
+                if isinstance(raw_response, dict)
+                else raw_response.dict()
+            )
+            span.set_attributes(
+                {
+                    "tokens": log_response["usage"]["total_tokens"],
+                    "prompt_tokens": log_response["usage"]["prompt_tokens"],
+                    "completion_tokens": log_response["usage"][
+                        "completion_tokens"
+                    ],
+                    "choices": json_serialize_anything(
+                        log_response["choices"]
+                    ),
+                }
+            )
+            try:
+                output = log_response["choices"][0]["message"]["content"]
+                _add_rag_event_with_output(
+                    self.tracer,
+                    "chat_completion_acreate",
+                    span,
+                    input=rag_event_input,
+                    output=output,  # type: ignore
+                    event_data=json.loads(rag_event_input),
+                )
+            except Exception as e:
+                # TODO log this
+                pass
+            return raw_response
 
     @classmethod
     def _parse_params(cls, params):
@@ -437,3 +451,27 @@ def wrap(
 
 
 wrap_openai = wrap
+
+
+### Help methods
+def _add_rag_event_with_output(
+    tracer: LastMileTracer,
+    event_name: str,
+    span=None,  # type: ignore
+    input: Optional[Any] = None,
+    output: Optional[Any] = None,
+    event_data: dict[Any, Any] | None = None,
+) -> None:
+    if output is not None:
+        tracer.add_rag_event_for_span(
+            event_name,
+            span,  # type: ignore
+            input=input,
+            output=output,
+        )
+    else:
+        tracer.add_rag_event_for_span(
+            event_name,
+            span,  # type: ignore
+            event_data=event_data,
+        )
