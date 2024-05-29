@@ -71,14 +71,18 @@ class ChatCompletionWrapper:
         self.create_fn = create_fn
         self.acreate_fn = acreate_fn
         self.tracer: LastMileTracer = tracer
+        print("completion wrapper is initializing...")
 
     def create(self, *args, **kwargs):
+        print("start of create function")
         params = self._parse_params(kwargs)
         params_flat = flatten_json(params)
         stream = kwargs.get("stream", False)
+        print("this is the steam arg: ", stream)
 
         rag_event_input = json_serialize_anything(params)
         with self.tracer.start_as_current_span("chat-completion-span") as span:
+            print("fuck me dude let's print")
             start = time.time()
             raw_response = self.create_fn(*args, **kwargs)
             if stream:
@@ -126,11 +130,14 @@ class ChatCompletionWrapper:
 
             # Non-streaming part
             else:
+                print("Non-streaming part")
                 log_response = (
                     raw_response
                     if isinstance(raw_response, dict)
                     else raw_response.dict()
                 )
+                print(f"{raw_response=}")
+                print(f"{log_response=}")
                 span.set_attributes(
                     {
                         "time_to_first_token": time.time() - start,
@@ -161,9 +168,11 @@ class ChatCompletionWrapper:
                 except Exception as e:
                     # TODO log this
                     pass
-                yield raw_response
+                print("hey did I get here: ", raw_response)
+                return raw_response
 
     async def acreate(self, *args, **kwargs):
+        print("Am I fucking in the async method dawg?")
         params = self._parse_params(kwargs)
         stream = kwargs.get("stream", False)
 
@@ -262,6 +271,7 @@ class EmbeddingWrapper:
         self.tracer = tracer
 
     def create(self, *args, **kwargs):
+        print("fuck me 1")
         params = self._parse_params(kwargs)
         params_flat = flatten_json(params)
 
@@ -330,6 +340,7 @@ class ChatCompletionV0Wrapper(NamedWrapper):
         super().__init__(chat)
 
     def create(self, *args, **kwargs):
+        print("V0, about to enter create function")
         return ChatCompletionWrapper(
             self.__chat.create, self.__chat.acreate, self.tracer
         ).create(*args, **kwargs)
@@ -375,6 +386,7 @@ class CompletionsV1Wrapper(NamedWrapper):
         super().__init__(completions)
 
     def create(self, *args, **kwargs):
+        print("V1, about to enter create function")
         return ChatCompletionWrapper(
             self.__completions.create, None, self.tracer
         ).create(*args, **kwargs)
@@ -387,6 +399,7 @@ class EmbeddingV1Wrapper(NamedWrapper):
         super().__init__(embedding)
 
     def create(self, *args, **kwargs):
+        print("fuck me 2")
         return EmbeddingWrapper(
             self.__embedding.create, None, self.tracer
         ).create(*args, **kwargs)
@@ -399,6 +412,7 @@ class AsyncCompletionsV1Wrapper(NamedWrapper):
         super().__init__(completions)
 
     async def create(self, *args, **kwargs):
+        print("fuck me 3")
         return await ChatCompletionWrapper(
             None, self.__completions.create, self.tracer
         ).acreate(*args, **kwargs)
@@ -411,6 +425,7 @@ class AsyncEmbeddingV1Wrapper(NamedWrapper):
         super().__init__(embedding)
 
     async def create(self, *args, **kwargs):
+        print("fuck me 4")
         return await EmbeddingWrapper(
             None, self.__embedding.create, self.tracer
         ).acreate(*args, **kwargs)
@@ -420,17 +435,21 @@ class ChatV1Wrapper(NamedWrapper):
     def __init__(self, chat, tracer):
         super().__init__(chat)
         self.tracer = tracer
+        print("chatv1 wrapper initializing...")
 
         import openai
 
-        if (
-            type(chat.completions)
-            == openai.resources.chat.completions.AsyncCompletions
+        print(f"{chat.completions=}")
+        if isinstance(
+            chat.completions,
+            openai.resources.chat.completions.AsyncCompletions,
         ):
+            print("chatv1 wrapper async completions")
             self.completions = AsyncCompletionsV1Wrapper(
                 chat.completions, self.tracer
             )
         else:
+            print("chatv1 wrapper regular completions")
             self.completions = CompletionsV1Wrapper(
                 chat.completions, self.tracer
             )
@@ -438,22 +457,25 @@ class ChatV1Wrapper(NamedWrapper):
 
 # This wraps 1.*.* versions of the openai module, eg https://github.com/openai/openai-python/tree/v1.1.0
 class OpenAIV1Wrapper(NamedWrapper):
-    def __init__(self, openai, tracer):
-        super().__init__(openai)
-        self.tracer = tracer
+    def __init__(self, client: openai_module.OpenAI, tracer: LastMileTracer):
+        super().__init__(client)
+        self.tracer: LastMileTracer = tracer
 
-        self.chat = ChatV1Wrapper(openai.chat, self.tracer)
+        print("inside openai v1 wrapper")
+        self.chat = ChatV1Wrapper(client.chat, self.tracer)
 
-        if (
-            type(openai.embeddings)
-            == openai_module.resources.embeddings.AsyncEmbeddings
+        if isinstance(
+            client.embeddings,
+            openai_module.resources.embeddings.AsyncEmbeddings,
         ):
+            print("inside async embedding here")
             self.embeddings = AsyncEmbeddingV1Wrapper(
-                openai.embeddings, self.tracer
+                client.embeddings, self.tracer
             )
         else:
+            print("inside regular embedding wrapper")
             self.embeddings = EmbeddingV1Wrapper(
-                openai.embeddings, self.tracer
+                client.embeddings, self.tracer
             )
 
 
@@ -465,9 +487,12 @@ def wrap(
 
     :param openai: The openai module or OpenAI object
     """
+    print("get wrapping...")
     if hasattr(openai, "chat") and hasattr(openai.chat, "completions"):
+        print("enter 1")
         return OpenAIV1Wrapper(openai, tracer)
     else:
+        print("enter 2")
         return OpenAIV0Wrapper(openai, tracer)
 
 
