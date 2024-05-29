@@ -402,9 +402,9 @@ class ChatV1Wrapper(NamedWrapper):
 
         import openai
 
-        if (
-            type(chat.completions)
-            == openai.resources.chat.completions.AsyncCompletions
+        if isinstance(
+            chat.completions,
+            openai.resources.chat.completions.AsyncCompletions,
         ):
             self.completions = AsyncCompletionsV1Wrapper(
                 chat.completions, self.tracer
@@ -423,9 +423,9 @@ class OpenAIV1Wrapper(NamedWrapper):
 
         self.chat = ChatV1Wrapper(openai.chat, self.tracer)
 
-        if (
-            type(openai.embeddings)
-            == openai_module.resources.embeddings.AsyncEmbeddings
+        if isinstance(
+            openai.embeddings,
+            openai_module.resources.embeddings.AsyncEmbeddings,
         ):
             self.embeddings = AsyncEmbeddingV1Wrapper(
                 openai.embeddings, self.tracer
