@@ -1,9 +1,14 @@
 import json
 import time
 from typing import Any, Mapping, Optional
-import openai as openai_module
 
+import openai as openai_module
+from openai.types.chat import (
+    ChatCompletionChunk,
+)
 from lastmile_eval.rag.debugger.api import LastMileTracer
+from pydantic import BaseModel
+
 from tracing_auto_instrumentation.wrap_utils import (
     NamedWrapper,
     json_serialize_anything,
@@ -50,7 +55,7 @@ def postprocess_streaming_results(all_results: list[Any]) -> Mapping[str, Any]:
                 ]["function"]["arguments"]
 
     return {
-        "index": 0,
+        "index": 0,  # TODO: Can be multiple if n > 1
         "message": {
             "role": role,
             "content": content,
@@ -68,6 +73,7 @@ class ChatCompletionWrapper:
         self.tracer: LastMileTracer = tracer
 
     def create(self, *args, **kwargs):
+        print("fuck this starting create now")
         params = self._parse_params(kwargs)
         params_flat = flatten_json(params)
         stream = kwargs.get("stream", False)
@@ -80,67 +86,83 @@ class ChatCompletionWrapper:
 
                 def gen():
                     first = True
-                    all_results = []
+                    accumulated_text = ""
                     for item in raw_response:
                         if first:
                             span.set_attribute(
                                 "time_to_first_token", time.time() - start
                             )
                             first = False
-                        all_results.append(
-                            item if isinstance(item, dict) else item.dict()
-                        )
+                        if isinstance(item, ChatCompletionChunk):
+                            # Ignore multiple responses for now,
+                            # will support in future PR, by looking at the index in choice dict
+                            # We need to also support tool call handling (as well as tool
+                            # call handling streaming, which we never did properly):
+                            # https://community.openai.com/t/has-anyone-managed-to-get-a-tool-call-working-when-stream-true/498867
+                            choice = item.choices[
+                                0
+                            ]  # TODO: Can be multiple if n > 1
+                            if (
+                                choice
+                                and choice.delta
+                                and (choice.delta.content is not None)
+                            ):
+                                accumulated_text += choice.delta.content
                         yield item
 
-                    stream_output = postprocess_streaming_results(all_results)
-                    span.set_attributes(flatten_json(stream_output))
+                    # TODO: Save this later instead of just output_content
+                    # stream_output = postprocess_streaming_results(all_results)
+                    span.set_attribute("output_content", accumulated_text)
 
-                    stream_content = stream_output["message"]["content"]
                     _add_rag_event_with_output(
                         self.tracer,
                         "chat_completion_create_stream",
                         span,
                         input=rag_event_input,
-                        output=stream_content,
+                        output=accumulated_text,
                         event_data=json.loads(rag_event_input),
                     )
 
-                return gen()
+                yield from gen()
 
             # Non-streaming part
-            log_response = (
-                raw_response
-                if isinstance(raw_response, dict)
-                else raw_response.dict()
-            )
-            span.set_attributes(
-                {
-                    "time_to_first_token": time.time() - start,
-                    "tokens": log_response["usage"]["total_tokens"],
-                    "prompt_tokens": log_response["usage"]["prompt_tokens"],
-                    "completion_tokens": log_response["usage"][
-                        "completion_tokens"
-                    ],
-                    "choices": json_serialize_anything(
-                        log_response["choices"]
-                    ),
-                    **params_flat,
-                }
-            )
-            try:
-                output = log_response["choices"][0]["message"]["content"]
-                _add_rag_event_with_output(
-                    self.tracer,
-                    "chat_completion_create",
-                    span,
-                    input=rag_event_input,
-                    output=output,
-                    event_data=json.loads(rag_event_input),
+            else:
+                log_response = (
+                    raw_response
+                    if isinstance(raw_response, dict)
+                    else raw_response.dict()
                 )
-            except Exception as e:
-                # TODO log this
-                pass
-            return raw_response
+                span.set_attributes(
+                    {
+                        "time_to_first_token": time.time() - start,
+                        "tokens": log_response["usage"]["total_tokens"],
+                        "prompt_tokens": log_response["usage"][
+                            "prompt_tokens"
+                        ],
+                        "completion_tokens": log_response["usage"][
+                            "completion_tokens"
+                        ],
+                        "choices": json_serialize_anything(
+                            log_response["choices"]
+                        ),
+                        **params_flat,
+                    }
+                )
+                try:
+                    # TODO: Handle responses where n > 1
+                    output = log_response["choices"][0]["message"]["content"]
+                    _add_rag_event_with_output(
+                        self.tracer,
+                        "chat_completion_create",
+                        span,
+                        input=rag_event_input,
+                        output=output,
+                        event_data=json.loads(rag_event_input),
+                    )
+                except Exception as e:
+                    # TODO log this
+                    pass
+                yield raw_response
 
     async def acreate(self, *args, **kwargs):
         params = self._parse_params(kwargs)
@@ -170,6 +192,7 @@ class ChatCompletionWrapper:
                         yield item
 
                     stream_output = postprocess_streaming_results(all_results)
+                    print("A FUCK me inside acreate stream")
                     span.set_attributes(flatten_json(stream_output))
 
                     stream_content = stream_output["message"]["content"]
