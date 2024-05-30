@@ -3,12 +3,10 @@ import time
 from typing import Any, Mapping, Optional
 
 import openai as openai_module
-from openai.types.chat import (
-    ChatCompletionChunk,
-)
-from openai.resources.chat import AsyncCompletions
-from openai.resources.embeddings import AsyncEmbeddings
 from lastmile_eval.rag.debugger.api import LastMileTracer
+from openai.resources.chat import AsyncChat, AsyncCompletions, Chat
+from openai.resources.embeddings import AsyncEmbeddings
+from openai.types.chat import ChatCompletionChunk
 
 from tracing_auto_instrumentation.wrap_utils import (
     NamedWrapper,
@@ -407,9 +405,15 @@ class ChatCompletionV0Wrapper(NamedWrapper):
         return response
 
     async def acreate(self, *args, **kwargs):
-        return await ChatCompletionWrapper(
+        response = ChatCompletionWrapper(
             self.__chat.create, self.__chat.acreate, self.tracer
         ).acreate(*args, **kwargs)
+        stream = kwargs.get("stream", False)
+
+        if not stream:
+            non_streaming_response_value = await anext(response)
+            return non_streaming_response_value
+        return response
 
 
 class EmbeddingV0Wrapper(NamedWrapper):
@@ -424,9 +428,14 @@ class EmbeddingV0Wrapper(NamedWrapper):
         ).create(*args, **kwargs)
 
     async def acreate(self, *args, **kwargs):
-        return await ChatCompletionWrapper(
+        response = await ChatCompletionWrapper(
             self.__embedding.create, self.__embedding.acreate, self.tracer
         ).acreate(*args, **kwargs)
+        stream = kwargs.get("stream", False)
+        if not stream:
+            non_streaming_response_value = await anext(response)
+            return non_streaming_response_value
+        return response
 
 
 # This wraps 0.*.* versions of the openai module, eg https://github.com/openai/openai-python/tree/v0.28.1
@@ -479,7 +488,7 @@ class AsyncCompletionsV1Wrapper(NamedWrapper):
         super().__init__(completions)
 
     async def create(self, *args, **kwargs):
-        response = await ChatCompletionWrapper(
+        response = ChatCompletionWrapper(
             None, self.__completions.create, self.tracer
         ).acreate(*args, **kwargs)
 
@@ -502,8 +511,8 @@ class AsyncEmbeddingV1Wrapper(NamedWrapper):
         ).acreate(*args, **kwargs)
 
 
-class ChatV1Wrapper(NamedWrapper):
-    def __init__(self, chat, tracer):
+class ChatV1Wrapper(NamedWrapper[Chat | AsyncChat]):
+    def __init__(self, chat: Chat | AsyncChat, tracer: LastMileTracer):
         super().__init__(chat)
         self.tracer = tracer
 
@@ -520,35 +529,43 @@ class ChatV1Wrapper(NamedWrapper):
 
 
 # This wraps 1.*.* versions of the openai module, eg https://github.com/openai/openai-python/tree/v1.1.0
-class OpenAIV1Wrapper(NamedWrapper):
-    def __init__(self, openai, tracer):
-        super().__init__(openai)
-        self.tracer = tracer
+class OpenAIV1Wrapper(
+    NamedWrapper[openai_module.OpenAI | openai_module.AsyncOpenAI]
+):
+    def __init__(
+        self,
+        client: openai_module.OpenAI | openai_module.AsyncOpenAI,
+        tracer: LastMileTracer,
+    ):
+        super().__init__(client)
+        self.tracer: LastMileTracer = tracer
 
-        self.chat = ChatV1Wrapper(openai.chat, self.tracer)
+        self.chat = ChatV1Wrapper(client.chat, self.tracer)
 
-        if isinstance(openai.embeddings, AsyncEmbeddings):
+        if isinstance(client.embeddings, AsyncEmbeddings):
             self.embeddings = AsyncEmbeddingV1Wrapper(
-                openai.embeddings, self.tracer
+                client.embeddings, self.tracer
             )
         else:
             self.embeddings = EmbeddingV1Wrapper(
-                openai.embeddings, self.tracer
+                client.embeddings, self.tracer
             )
 
 
 def wrap(
-    openai: openai_module.OpenAI, tracer: LastMileTracer
+    client_or_module: openai_module.OpenAI | openai_module.AsyncOpenAI,
+    tracer: LastMileTracer,
 ) -> OpenAIV0Wrapper | OpenAIV1Wrapper:
     """
-    Wrap the openai module (pre v1) or OpenAI instance (post v1) to add tracing.
+    Wrap the openai module (pre v1) or OpenAI client (post v1) to add tracing.
 
-    :param openai: The openai module or OpenAI object
+    :param client_or_module: The openai module or OpenAI client
     """
-    if hasattr(openai, "chat") and hasattr(openai.chat, "completions"):
-        return OpenAIV1Wrapper(openai, tracer)
-    else:
-        return OpenAIV0Wrapper(openai, tracer)
+    if hasattr(client_or_module, "chat") and hasattr(
+        client_or_module.chat, "completions"
+    ):
+        return OpenAIV1Wrapper(client_or_module, tracer)
+    return OpenAIV0Wrapper(client_or_module, tracer)
 
 
 wrap_openai = wrap
