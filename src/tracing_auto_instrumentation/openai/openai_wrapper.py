@@ -8,7 +8,7 @@ from openai.resources.chat import AsyncChat, AsyncCompletions, Chat
 from openai.resources.embeddings import AsyncEmbeddings
 from openai.types.chat import ChatCompletionChunk
 
-from tracing_auto_instrumentation.wrap_utils import (
+from ..utils import (
     NamedWrapper,
     json_serialize_anything,
 )
