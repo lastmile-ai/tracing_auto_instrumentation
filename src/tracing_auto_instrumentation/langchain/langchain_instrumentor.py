@@ -23,9 +23,10 @@ from wrapt import wrap_function_wrapper
 from lastmile_eval.rag.debugger.tracing.sdk import get_lastmile_tracer
 
 from lastmile_eval.rag.debugger.common.utils import (
-    DEFAULT_PROJECT_NAME,
     LASTMILE_SPAN_KIND_KEY_NAME,
 )
+
+from ..utils import DEFAULT_TRACER_NAME_PREFIX
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -45,13 +46,15 @@ class LangChainInstrumentor(BaseInstrumentor):
 
     def __init__(
         self,
-        project_name: str = DEFAULT_PROJECT_NAME,
+        project_name: Optional[str] = None,
         lastmile_api_token: Optional[str] = None,
     ) -> None:
         super().__init__()
         self._tracer = get_lastmile_tracer(
-            tracer_name=project_name,
+            tracer_name=project_name
+            or (DEFAULT_TRACER_NAME_PREFIX + " - Langchain"),
             lastmile_api_token=lastmile_api_token,
+            project_name=project_name,
         )
 
     def instrumentation_dependencies(self) -> Collection[str]:

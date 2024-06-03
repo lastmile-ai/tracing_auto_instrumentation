@@ -37,9 +37,10 @@ from opentelemetry import context as context_api
 from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY  # type: ignore
 from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
 from lastmile_eval.rag.debugger.common.utils import (
-    DEFAULT_PROJECT_NAME,
     LASTMILE_SPAN_KIND_KEY_NAME,
 )
+
+from ..utils import DEFAULT_TRACER_NAME_PREFIX
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -77,11 +78,12 @@ class LlamaIndexCallbackHandler(OpenInferenceTraceCallbackHandler):
 
     def __init__(
         self,
-        project_name: str = DEFAULT_PROJECT_NAME,
+        project_name: Optional[str] = None,
         lastmile_api_token: Optional[str] = None,
     ):
         tracer = get_lastmile_tracer(
-            tracer_name=project_name,
+            tracer_name=project_name
+            or (DEFAULT_TRACER_NAME_PREFIX + " - LlamaIndex"),
             lastmile_api_token=lastmile_api_token,
         )
         super().__init__(tracer)
