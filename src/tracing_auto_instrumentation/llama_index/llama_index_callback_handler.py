@@ -2,15 +2,23 @@ import logging
 from time import time_ns
 from typing import Any, Dict, Optional
 
+from lastmile_eval.rag.debugger.api import LastMileTracer
+from lastmile_eval.rag.debugger.common.utils import LASTMILE_SPAN_KIND_KEY_NAME
+from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
 from llama_index.core.callbacks import CBEventType, EventPayload
 from openinference.instrumentation.llama_index._callback import (
-    OpenInferenceTraceCallbackHandler,
-    payload_to_semantic_attributes,
-    _is_streaming_response,  # type: ignore
-    _flatten,  # type: ignore
-    _ResponseGen,  # type: ignore
-    _EventData,  # type: ignore
-    # Opinionated params we explicit want to save, see source for full list
+    _EventData,
+)  # type: ignore
+from openinference.instrumentation.llama_index._callback import (
+    _flatten,
+)  # type: ignore
+from openinference.instrumentation.llama_index._callback import (
+    _is_streaming_response,
+)  # type: ignore
+from openinference.instrumentation.llama_index._callback import (
+    _ResponseGen,
+)  # type: ignore
+from openinference.instrumentation.llama_index._callback import (  # Opinionated params we explicit want to save, see source for full list; # Explicit chose not to do these two because context can be huge and we; # can extract this from both the prompt template template and variables; LLM_INPUT_MESSAGES,; LLM_OUTPUT_MESSAGES,
     DOCUMENT_SCORE,
     EMBEDDING_MODEL_NAME,
     INPUT_VALUE,
@@ -26,19 +34,13 @@ from openinference.instrumentation.llama_index._callback import (
     RETRIEVAL_DOCUMENTS,
     TOOL_CALL_FUNCTION_NAME,
     TOOL_NAME,
-    # # Explicit chose not to do these two because context can be huge and we
-    # # can extract this from both the prompt template template and variables
-    # LLM_INPUT_MESSAGES,
-    # LLM_OUTPUT_MESSAGES,
+    OpenInferenceTraceCallbackHandler,
+    payload_to_semantic_attributes,
 )
-from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry import trace as trace_api
 from opentelemetry import context as context_api
+from opentelemetry import trace as trace_api
 from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY  # type: ignore
-from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
-from lastmile_eval.rag.debugger.common.utils import (
-    LASTMILE_SPAN_KIND_KEY_NAME,
-)
+from opentelemetry.sdk.trace import ReadableSpan
 
 from ..utils import DEFAULT_TRACER_NAME_PREFIX
 
@@ -81,7 +83,7 @@ class LlamaIndexCallbackHandler(OpenInferenceTraceCallbackHandler):
         project_name: Optional[str] = None,
         lastmile_api_token: Optional[str] = None,
     ):
-        tracer = get_lastmile_tracer(
+        tracer: LastMileTracer = get_lastmile_tracer(
             tracer_name=project_name
             or (DEFAULT_TRACER_NAME_PREFIX + " - LlamaIndex"),
             lastmile_api_token=lastmile_api_token,
@@ -153,7 +155,7 @@ class LlamaIndexCallbackHandler(OpenInferenceTraceCallbackHandler):
 
 def _finish_tracing(
     event_data: _EventData,
-    tracer,
+    tracer: LastMileTracer,
     event_type: CBEventType,
 ) -> None:
     if not (span := event_data.span):
@@ -199,6 +201,7 @@ def _finish_tracing(
                 event_name=str(event_data.event_type),
                 span=span,
                 event_data=serializable_payload,
+                should_also_save_in_span=False,
             )
             tracer.register_params(
                 params=serializable_payload,
