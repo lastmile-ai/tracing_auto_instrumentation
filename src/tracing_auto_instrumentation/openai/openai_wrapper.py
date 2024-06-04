@@ -586,10 +586,12 @@ def _add_rag_event_with_output(
             span,  # type: ignore
             input=input,
             output=output,
+            should_also_save_in_span=False,
         )
     else:
         tracer.add_rag_event_for_span(
             event_name,
             span,  # type: ignore
             event_data=event_data,
+            should_also_save_in_span=False,
         )

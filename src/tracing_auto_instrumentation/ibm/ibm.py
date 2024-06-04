@@ -81,6 +81,7 @@ class GenerateWrapper:
                 span=span,
                 input=input_serializable,
                 output=response,
+                should_also_save_in_span=False,
             )
             return response
 
@@ -109,6 +110,7 @@ class GenerateTextWrapper:
                 span=span,
                 input=input_serializable,
                 output=response,
+                should_also_save_in_span=False,
             )
             return response
 
