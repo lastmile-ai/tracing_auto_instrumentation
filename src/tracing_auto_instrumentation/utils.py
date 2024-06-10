@@ -3,6 +3,7 @@ from typing import Any, Generic, TypeVar
 
 
 T_INV = TypeVar("T_INV")
+DEFAULT_TRACER_NAME_PREFIX = "LastMileTracer"
 
 
 class NamedWrapper(Generic[T_INV]):
