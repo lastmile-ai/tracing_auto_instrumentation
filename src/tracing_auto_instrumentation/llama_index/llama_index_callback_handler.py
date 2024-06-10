@@ -81,9 +81,12 @@ class LlamaIndexCallbackHandler(OpenInferenceTraceCallbackHandler):
         project_name: Optional[str] = None,
         lastmile_api_token: Optional[str] = None,
     ):
+        project_name = project_name or (
+            DEFAULT_TRACER_NAME_PREFIX + " - LlamaIndex"
+        )
         tracer = get_lastmile_tracer(
-            tracer_name=project_name
-            or (DEFAULT_TRACER_NAME_PREFIX + " - LlamaIndex"),
+            tracer_name=project_name,
+            project_name=project_name,
             lastmile_api_token=lastmile_api_token,
         )
         super().__init__(tracer)
