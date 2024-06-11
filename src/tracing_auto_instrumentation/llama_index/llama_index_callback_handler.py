@@ -3,7 +3,11 @@ from collections import defaultdict
 from time import time_ns
 from typing import Any, Dict, Optional, Union
 
-from lastmile_eval.rag.debugger.api import LastMileTracer, RetrievedNode
+from lastmile_eval.rag.debugger.api import (
+    LastMileTracer,
+    RetrievedNode,
+    TextEmbedding,
+)
 from lastmile_eval.rag.debugger.common.utils import LASTMILE_SPAN_KIND_KEY_NAME
 from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
 from llama_index.core.callbacks import CBEventType, EventPayload
@@ -16,6 +20,7 @@ from openinference.instrumentation.llama_index._callback import (
     _EventData,  # type: ignore
     # Opinionated params we explicit want to save, see source for full list
     DOCUMENT_SCORE,
+    EMBEDDING_EMBEDDINGS,
     EMBEDDING_MODEL_NAME,
     INPUT_VALUE,
     LLM_INVOCATION_PARAMETERS,
@@ -47,6 +52,7 @@ logger.addHandler(logging.NullHandler())
 
 PARAM_SET_SUBSTRING_MATCHES = (
     DOCUMENT_SCORE,
+    EMBEDDING_EMBEDDINGS,
     EMBEDDING_MODEL_NAME,
     INPUT_VALUE,
     LLM_INVOCATION_PARAMETERS,
@@ -246,6 +252,63 @@ def _finish_tracing(
                     span=span,
                     should_also_save_in_span=True,
                 )
+            elif event_type == CBEventType.EMBEDDING:
+                # embed_info contains as key the index of the text chunk
+                # (or query) and value the embedding info
+                # Example: {0: {'text': 'something to embed', 'vector': [0.1, 0.2, 0.3 ... 0.2343]}}
+                embed_info: defaultdict[
+                    int, dict[str, Union[str, list[float]]]
+                ] = defaultdict(dict)
+                model_name: str = ""
+                for key, value in serializable_payload.items():
+                    if EMBEDDING_EMBEDDINGS in key:
+                        # Example of key would be "embedding.embeddings.0.embedding.text"
+                        key_parts = key.split(".")
+                        text_index: int = -1
+                        for part in key_parts:
+                            if part.isnumeric():
+                                text_index = int(part)
+                        if text_index == -1:
+                            continue
+
+                        # info will be either "text", or "vector"
+                        info_type = key.split(".")[-1]
+                        embed_info[text_index][info_type] = value
+                    if EMBEDDING_MODEL_NAME in key:
+                        model_name = value
+
+                # build list of embeddings
+                embeddings: list[TextEmbedding] = []
+                for key, info_dict in dict(sorted(embed_info.items())).items():
+                    embeddings.append(
+                        TextEmbedding(
+                            id=f"embedding-{key}",
+                            text=str(info_dict["text"]),
+                            vector=info_dict["vector"],  # type: ignore
+                        )
+                    )
+
+                if len(embeddings) == 1:
+                    tracer.add_embedding_event(
+                        embedding=embeddings[0],
+                        span=span,
+                        should_also_save_in_span=True,
+                        metadata={
+                            f"{EMBEDDING_MODEL_NAME}": model_name,
+                        },
+                    )
+                elif len(embeddings) > 1:
+                    curr_span_index: str = span._name[0]
+                    span.update_name(f"{curr_span_index} - multi_embedding")
+                    tracer.add_multi_embedding_event(
+                        embeddings=embeddings,
+                        span=span,
+                        should_also_save_in_span=True,
+                        metadata={
+                            "embedding.count": len(embed_info),
+                            f"{EMBEDDING_MODEL_NAME}": model_name,
+                        },
+                    )
             else:
                 tracer.add_rag_event_for_span(
                     event_name=str(event_data.event_type),
@@ -301,9 +364,9 @@ def _add_rag_event_to_tracer() -> None:
     Done
     QUERY = "query"
     RETRIEVE = "retrieve"
+    EMBEDDING = "embedding"
 
     TODO
-    EMBEDDING = "embedding"
     LLM = "llm"
     SUB_QUESTION = "sub_question"
     TEMPLATING = "templating"
