@@ -1,8 +1,9 @@
 import logging
+from collections import defaultdict
 from time import time_ns
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
-from lastmile_eval.rag.debugger.api import LastMileTracer
+from lastmile_eval.rag.debugger.api import LastMileTracer, RetrievedNode
 from lastmile_eval.rag.debugger.common.utils import LASTMILE_SPAN_KIND_KEY_NAME
 from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
 from llama_index.core.callbacks import CBEventType, EventPayload
@@ -194,12 +195,64 @@ def _finish_tracing(
                 # Only save the opinionated data to event data and param set
                 if _save_to_param_set(key):
                     serializable_payload[key] = value
-            tracer.add_rag_event_for_span(
-                event_name=str(event_data.event_type),
-                span=span,
-                event_data=serializable_payload,
-                should_also_save_in_span=True,
-            )
+
+            event_type = event_data.event_type
+            if event_type == CBEventType.QUERY:
+                tracer.add_query_event(
+                    query=serializable_payload[INPUT_VALUE],
+                    llm_output=serializable_payload[OUTPUT_VALUE],
+                    span=span,
+                    should_also_save_in_span=True,
+                )
+            elif event_type == CBEventType.RETRIEVE:
+                # extract document data
+
+                # doc_info contains as key the index of the document and value the
+                # info of the document
+                # Example: {0: {'id': 'doc1', 'score': 0.5, 'content': 'doc1 content'}}
+                doc_info: defaultdict[int, dict[str, Union[str, float]]] = (
+                    defaultdict(dict)
+                )
+                for key, value in serializable_payload.items():
+                    if RETRIEVAL_DOCUMENTS in key:
+                        # Example of key would be "retrieval.documents.1.document.score"
+                        key_parts = key.split(".")
+                        doc_index: int = -1
+                        for part in key_parts:
+                            if part.isnumeric():
+                                doc_index = int(part)
+                        if doc_index == -1:
+                            continue
+
+                        # info will be either "id", "score", or "content"
+                        info_type = key.split(".")[-1]
+                        doc_info[doc_index][info_type] = value
+
+                # build list of retrieved nodes
+                retrieved_nodes: list[RetrievedNode] = []
+                # Sort the keys (document index) to add them in correct order
+                # to the retrieved nodes array
+                for info_dict in dict(sorted(doc_info.items())).values():
+                    retrieved_nodes.append(
+                        RetrievedNode(
+                            id=str(info_dict["id"]),
+                            score=float(info_dict["score"]),
+                            text=str(info_dict["content"]),
+                        )
+                    )
+                tracer.add_retrieval_event(
+                    query=serializable_payload[INPUT_VALUE],
+                    retrieved_nodes=retrieved_nodes,
+                    span=span,
+                    should_also_save_in_span=True,
+                )
+            else:
+                tracer.add_rag_event_for_span(
+                    event_name=str(event_data.event_type),
+                    span=span,
+                    event_data=serializable_payload,
+                    should_also_save_in_span=True,
+                )
             tracer.register_params(
                 params=serializable_payload,
                 should_also_save_in_span=True,
@@ -234,3 +287,30 @@ def _save_to_param_set(key: str):
         if substring in key:
             return True
     return False
+
+
+def _add_rag_event_to_tracer(
+    tracer: LastMileTracer,
+    event_type: CBEventType,
+    span: ReadableSpan,
+    event_data: Dict[str, Any],
+) -> None:
+    """
+    # CHUNKING = "chunking"
+    # NODE_PARSING = "node_parsing"
+    EMBEDDING = "embedding"
+    LLM = "llm"
+    QUERY = "query"
+    RETRIEVE = "retrieve"
+    # SYNTHESIZE = "synthesize"
+    # TREE = "tree"
+    SUB_QUESTION = "sub_question"
+    TEMPLATING = "templating"
+    FUNCTION_CALL = "function_call"
+    RERANKING = "reranking"
+    EXCEPTION = "exception"
+    AGENT_STEP = "agent_step"
+    """
+    # event_name = str(event_data.event_type)
+    if event_type == CBEventType.EMBEDDING:
+        tracer.add_embedding_event()
