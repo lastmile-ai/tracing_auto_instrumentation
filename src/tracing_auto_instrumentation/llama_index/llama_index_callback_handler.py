@@ -26,6 +26,10 @@ from openinference.instrumentation.llama_index._callback import (
     LLM_INVOCATION_PARAMETERS,
     LLM_MODEL_NAME,
     LLM_PROMPT_TEMPLATE,
+    LLM_PROMPT_TEMPLATE_VARIABLES,
+    LLM_TOKEN_COUNT_COMPLETION,
+    LLM_TOKEN_COUNT_PROMPT,
+    LLM_TOKEN_COUNT_TOTAL,
     MESSAGE_FUNCTION_CALL_NAME,
     OUTPUT_VALUE,
     RERANKER_MODEL_NAME,
@@ -58,6 +62,10 @@ PARAM_SET_SUBSTRING_MATCHES = (
     LLM_INVOCATION_PARAMETERS,
     LLM_MODEL_NAME,
     LLM_PROMPT_TEMPLATE,
+    LLM_PROMPT_TEMPLATE_VARIABLES,
+    LLM_TOKEN_COUNT_COMPLETION,
+    LLM_TOKEN_COUNT_PROMPT,
+    LLM_TOKEN_COUNT_TOTAL,
     MESSAGE_FUNCTION_CALL_NAME,
     OUTPUT_VALUE,
     RERANKER_MODEL_NAME,
@@ -309,6 +317,40 @@ def _finish_tracing(
                             f"{EMBEDDING_MODEL_NAME}": model_name,
                         },
                     )
+            elif event_type == CBEventType.LLM:
+                template: str = serializable_payload[LLM_PROMPT_TEMPLATE]
+                template_variables: dict[str, str] = serializable_payload[
+                    LLM_PROMPT_TEMPLATE_VARIABLES
+                ]
+                resolved_prompt = template
+                for key, value in serializable_payload[
+                    LLM_PROMPT_TEMPLATE_VARIABLES
+                ].items():
+                    resolved_prompt = template.replace(f"{{{key}}}", value)
+                tracer.add_query_event(
+                    query=resolved_prompt,
+                    # TODO: Scan for the system prompt in the input messages
+                    # system_prompt=...
+                    llm_output=serializable_payload[OUTPUT_VALUE],
+                    span=span,
+                    should_also_save_in_span=True,
+                    metadata={
+                        LLM_INVOCATION_PARAMETERS: serializable_payload[
+                            LLM_INVOCATION_PARAMETERS
+                        ],
+                        LLM_PROMPT_TEMPLATE: template,
+                        LLM_PROMPT_TEMPLATE_VARIABLES: template_variables,
+                        LLM_TOKEN_COUNT_COMPLETION: serializable_payload[
+                            LLM_TOKEN_COUNT_COMPLETION
+                        ],
+                        LLM_TOKEN_COUNT_PROMPT: serializable_payload[
+                            LLM_TOKEN_COUNT_PROMPT
+                        ],
+                        LLM_TOKEN_COUNT_TOTAL: serializable_payload[
+                            LLM_TOKEN_COUNT_TOTAL
+                        ],
+                    },
+                )
             else:
                 tracer.add_rag_event_for_span(
                     event_name=str(event_data.event_type),
@@ -365,9 +407,9 @@ def _add_rag_event_to_tracer() -> None:
     QUERY = "query"
     RETRIEVE = "retrieve"
     EMBEDDING = "embedding"
+    LLM = "llm" # part of query
 
     TODO
-    LLM = "llm"
     SUB_QUESTION = "sub_question"
     TEMPLATING = "templating"
     FUNCTION_CALL = "function_call"
