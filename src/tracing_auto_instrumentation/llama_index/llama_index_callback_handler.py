@@ -16,6 +16,7 @@ from openinference.instrumentation.llama_index._callback import (
     _EventData,  # type: ignore
     # Opinionated params we explicit want to save, see source for full list
     DOCUMENT_SCORE,
+    EMBEDDING_EMBEDDINGS,
     EMBEDDING_MODEL_NAME,
     INPUT_VALUE,
     LLM_INVOCATION_PARAMETERS,
@@ -47,6 +48,7 @@ logger.addHandler(logging.NullHandler())
 
 PARAM_SET_SUBSTRING_MATCHES = (
     DOCUMENT_SCORE,
+    EMBEDDING_EMBEDDINGS,
     EMBEDDING_MODEL_NAME,
     INPUT_VALUE,
     LLM_INVOCATION_PARAMETERS,
@@ -246,6 +248,64 @@ def _finish_tracing(
                     span=span,
                     should_also_save_in_span=True,
                 )
+            elif event_type == CBEventType.EMBEDDING:
+                # embed_info contains as key the index of the text chunk
+                # (or query) and value the embedding info
+                # Example: {0: {'text': 'something to embed', 'vector': [0.1, 0.2, 0.3 ... 0.2343]}}
+                embed_info: defaultdict[
+                    int, dict[str, Union[str, list[float]]]
+                ] = defaultdict(dict)
+                model_name: str = ""
+                for key, value in serializable_payload.items():
+                    if EMBEDDING_EMBEDDINGS in key:
+                        # Example of key would be "embedding.embeddings.0.embedding.text"
+                        key_parts = key.split(".")
+                        text_index: int = -1
+                        for part in key_parts:
+                            if part.isnumeric():
+                                text_index = int(part)
+                        if text_index == -1:
+                            continue
+
+                        # info will be either "text", or "vector"
+                        info_type = key.split(".")[-1]
+                        embed_info[text_index][info_type] = value
+                    if EMBEDDING_MODEL_NAME in key:
+                        model_name = value
+
+                # Since we can have multiple embedding for multiple text chunks,
+                # we need to save this existing span as a synthesize event and
+                # start sub-spans for each text chunk to embed, since we can
+                # only show one event per span
+                for key, info_dict in embed_info.items():
+                    with tracer.start_as_current_span(
+                        name=f"sub-embedding-processing-{key}",
+                        context=span.get_span_context(),  # parent = span
+                    ) as sub_span:
+                        tracer.add_embedding_event(
+                            text=str(info_dict["text"]),
+                            embedding_vector=info_dict["vector"],  # type: ignore
+                            span=sub_span,
+                            should_also_save_in_span=True,
+                            metadata={
+                                f"{EMBEDDING_MODEL_NAME}": model_name,
+                            },
+                        )
+
+                curr_span_index: str = span._name[0]
+                span.update_name(
+                    f"{curr_span_index} - {CBEventType.SYNTHESIZE.value}"
+                )
+                tracer.add_synthesize_event(
+                    input="synthesizing embeddings",
+                    output="success",
+                    span=span,
+                    should_also_save_in_span=True,
+                    metadata={
+                        "embedding.count": len(embed_info),
+                        f"{EMBEDDING_MODEL_NAME}": model_name,
+                    },
+                )
             else:
                 tracer.add_rag_event_for_span(
                     event_name=str(event_data.event_type),
@@ -301,9 +361,9 @@ def _add_rag_event_to_tracer() -> None:
     Done
     QUERY = "query"
     RETRIEVE = "retrieve"
+    EMBEDDING = "embedding"
 
     TODO
-    EMBEDDING = "embedding"
     LLM = "llm"
     SUB_QUESTION = "sub_question"
     TEMPLATING = "templating"
