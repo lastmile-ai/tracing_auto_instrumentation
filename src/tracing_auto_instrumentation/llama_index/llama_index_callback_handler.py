@@ -261,6 +261,8 @@ def _finish_tracing(
                 ] = defaultdict(dict)
                 model_name: str = ""
                 for key, value in serializable_payload.items():
+                    if EMBEDDING_MODEL_NAME in key:
+                        model_name = value
                     if EMBEDDING_EMBEDDINGS in key:
                         # Example of key would be "embedding.embeddings.0.embedding.text"
                         key_parts = key.split(".")
@@ -274,8 +276,12 @@ def _finish_tracing(
                         # info will be either "text", or "vector"
                         info_type = key.split(".")[-1]
                         embed_info[text_index][info_type] = value
-                    if EMBEDDING_MODEL_NAME in key:
-                        model_name = value
+
+                        # sometimes embeddings are really large and cause
+                        # 413 - Request Entity Too Large errors. Try to
+                        # minimize this by deleting the embeddings from the
+                        # span attributes and only save to span events
+                        del span._attributes[key]
 
                 # build list of embeddings
                 embeddings: list[TextEmbedding] = []
