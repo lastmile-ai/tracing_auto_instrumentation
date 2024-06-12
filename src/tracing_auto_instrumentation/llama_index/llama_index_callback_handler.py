@@ -319,6 +319,7 @@ def _finish_tracing(
                         },
                     )
             elif event_type == CBEventType.LLM:
+                # TODO: Support tool calls
                 template: str = serializable_payload[LLM_PROMPT_TEMPLATE]
                 template_variables = serializable_payload[
                     LLM_PROMPT_TEMPLATE_VARIABLES
@@ -357,6 +358,8 @@ def _finish_tracing(
                         ],
                     },
                 )
+            # elif event_type == CBEventType.FUNCTION_CALL:
+            #     tracer.add_tool_call_event(serializable_payload[TOOL_NAME])
             else:
                 tracer.add_rag_event_for_span(
                     event_name=str(event_data.event_type),
@@ -414,11 +417,11 @@ def _add_rag_event_to_tracer() -> None:
     RETRIEVE = "retrieve"
     EMBEDDING = "embedding"
     LLM = "llm" # part of query
+    FUNCTION_CALL = "function_call"
 
     TODO
     SUB_QUESTION = "sub_question"
     TEMPLATING = "templating"
-    FUNCTION_CALL = "function_call"
     RERANKING = "reranking"
     EXCEPTION = "exception"
     AGENT_STEP = "agent_step"
