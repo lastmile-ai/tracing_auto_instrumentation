@@ -26,6 +26,7 @@ from openinference.instrumentation.llama_index._callback import (
     INPUT_VALUE,
     LLM_INVOCATION_PARAMETERS,
     LLM_MODEL_NAME,
+    LLM_INPUT_MESSAGES,
     LLM_PROMPT_TEMPLATE,
     LLM_PROMPT_TEMPLATE_VARIABLES,
     LLM_TOKEN_COUNT_COMPLETION,
@@ -40,9 +41,7 @@ from openinference.instrumentation.llama_index._callback import (
     RETRIEVAL_DOCUMENTS,
     TOOL_CALL_FUNCTION_NAME,
     TOOL_NAME,
-    # # Explicit chose not to do these two because context can be huge and we
-    # # can extract this from both the prompt template template and variables
-    # LLM_INPUT_MESSAGES,
+    # # Explicit chose not to do this because we can extract it from OUTPUT_VALUE
     # LLM_OUTPUT_MESSAGES,
 )
 from opentelemetry import context as context_api
@@ -62,6 +61,7 @@ PARAM_SET_SUBSTRING_MATCHES = (
     INPUT_VALUE,
     LLM_INVOCATION_PARAMETERS,
     LLM_MODEL_NAME,
+    LLM_INPUT_MESSAGES,
     LLM_PROMPT_TEMPLATE,
     LLM_PROMPT_TEMPLATE_VARIABLES,
     LLM_TOKEN_COUNT_COMPLETION,
@@ -322,33 +322,13 @@ def _finish_tracing(
                         },
                     )
             elif event_type == CBEventType.LLM:
-                template: str = serializable_payload[LLM_PROMPT_TEMPLATE]
-                template_variables = serializable_payload[
-                    LLM_PROMPT_TEMPLATE_VARIABLES
-                ]
-                if isinstance(template_variables, str):
-                    template_variables = json.loads(template_variables)
-
-                resolved_prompt = template
-                for key, value in template_variables.items():
-                    key_with_brackets = f"{{{key}}}"
-                    resolved_prompt = resolved_prompt.replace(
-                        key_with_brackets,
-                        value,
-                    )
-                tracer.add_query_event(
-                    query=str(resolved_prompt),  # type: ignore
-                    # TODO: Scan for the system prompt in the input messages
-                    # system_prompt=...
-                    llm_output=serializable_payload[OUTPUT_VALUE],
-                    span=span,
-                    should_also_save_in_span=True,
-                    metadata={
+                output = serializable_payload[OUTPUT_VALUE]
+                if isinstance(output, str):
+                    # If the output is a string, then it's answering a prompt/command
+                    metadata = {
                         LLM_INVOCATION_PARAMETERS: serializable_payload[
                             LLM_INVOCATION_PARAMETERS
                         ],
-                        LLM_PROMPT_TEMPLATE: template,
-                        LLM_PROMPT_TEMPLATE_VARIABLES: template_variables,
                         LLM_TOKEN_COUNT_COMPLETION: serializable_payload[
                             LLM_TOKEN_COUNT_COMPLETION
                         ],
@@ -358,8 +338,86 @@ def _finish_tracing(
                         LLM_TOKEN_COUNT_TOTAL: serializable_payload[
                             LLM_TOKEN_COUNT_TOTAL
                         ],
-                    },
-                )
+                    }
+
+                    # Check if a template exists and resolve if it does
+                    template: Optional[str] = serializable_payload.get(
+                        LLM_PROMPT_TEMPLATE
+                    )
+                    resolved_prompt = None
+
+                    if template is not None:
+                        # Get the user query from prompt template
+                        template_variables = serializable_payload[
+                            LLM_PROMPT_TEMPLATE_VARIABLES
+                        ]
+                        if isinstance(template_variables, str):
+                            template_variables = json.loads(template_variables)
+
+                        resolved_prompt = template
+                        for key, value in template_variables.items():
+                            key_with_brackets = f"{{{key}}}"
+                            resolved_prompt = resolved_prompt.replace(
+                                key_with_brackets,
+                                value,
+                            )
+                        metadata.update(
+                            {
+                                LLM_PROMPT_TEMPLATE: template,
+                                LLM_PROMPT_TEMPLATE_VARIABLES: template_variables,
+                            }
+                        )
+
+                    else:
+                        # Get the user query from last user message
+
+                        # message contains as key the index of the message
+                        # and value the message info
+                        # Example: {
+                        #   0: {'content': 'What is (121 * 3)', 'role': 'user'},
+                        #   1: {'arguments': {'a': 121, 'b': 3}, 'name': 'multiply'},
+                        #   2: {'content': 363, 'name': 'multiply', 'role': 'tool'},
+                        # }
+                        input_messages: defaultdict[
+                            int, dict[str, Union[str, dict[str, Any]]]
+                        ] = defaultdict(dict)
+                        for key, value in serializable_payload.items():
+                            if LLM_INPUT_MESSAGES in key:
+                                # Example of key would be "llm.input_messages.0.message.role"
+                                key_parts = key.split(".")
+                                text_index: int = -1
+                                for part in key_parts:
+                                    if part.isnumeric():
+                                        text_index = int(part)
+                                if text_index == -1:
+                                    continue
+
+                                info_type = key.split(".")[-1]
+                                input_messages[text_index][info_type] = value
+
+                        # Find the most recent user message
+                        for key, message in dict(
+                            sorted(input_messages.items(), reverse=True)
+                        ).items():
+                            role = message.get("role")
+                            if role is None or role != "user":
+                                continue
+                            resolved_prompt = message.get("content")
+
+                    tracer.add_query_event(
+                        query=str(resolved_prompt),  # type: ignore
+                        # TODO: Scan for the system prompt in the input messages
+                        # system_prompt=...
+                        llm_output=serializable_payload[OUTPUT_VALUE],
+                        span=span,
+                        should_also_save_in_span=True,
+                        metadata=metadata,
+                    )
+                else:
+                    # TODO: Support tool calls
+                    pass
+            # elif event_type == CBEventType.FUNCTION_CALL:
+            #     tracer.add_tool_call_event(serializable_payload[TOOL_NAME])
             else:
                 tracer.add_rag_event_for_span(
                     event_name=str(event_data.event_type),
@@ -417,11 +475,11 @@ def _add_rag_event_to_tracer() -> None:
     RETRIEVE = "retrieve"
     EMBEDDING = "embedding"
     LLM = "llm" # part of query
+    FUNCTION_CALL = "function_call"
 
     TODO
     SUB_QUESTION = "sub_question"
     TEMPLATING = "templating"
-    FUNCTION_CALL = "function_call"
     RERANKING = "reranking"
     EXCEPTION = "exception"
     AGENT_STEP = "agent_step"
