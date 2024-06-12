@@ -20,7 +20,6 @@ from openinference.instrumentation.llama_index._callback import (
     _ResponseGen,  # type: ignore
     _EventData,  # type: ignore
     # Opinionated params we explicit want to save, see source for full list
-    DOCUMENT_SCORE,
     EMBEDDING_EMBEDDINGS,
     EMBEDDING_MODEL_NAME,
     INPUT_VALUE,
@@ -32,15 +31,10 @@ from openinference.instrumentation.llama_index._callback import (
     LLM_TOKEN_COUNT_COMPLETION,
     LLM_TOKEN_COUNT_PROMPT,
     LLM_TOKEN_COUNT_TOTAL,
-    MESSAGE_FUNCTION_CALL_NAME,
     OUTPUT_VALUE,
     RERANKER_MODEL_NAME,
-    RERANKER_OUTPUT_DOCUMENTS,
-    RERANKER_QUERY,
     RERANKER_TOP_K,
     RETRIEVAL_DOCUMENTS,
-    TOOL_CALL_FUNCTION_NAME,
-    TOOL_NAME,
     # # Explicit chose not to do this because we can extract it from OUTPUT_VALUE
     # LLM_OUTPUT_MESSAGES,
 )
@@ -54,28 +48,18 @@ from ..utils import DEFAULT_TRACER_NAME_PREFIX
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
+# In general, only store "configuration" params instead of values that can
+# dynamically change at run-time for each trace like input messages
 PARAM_SET_SUBSTRING_MATCHES = (
-    DOCUMENT_SCORE,
-    EMBEDDING_EMBEDDINGS,
     EMBEDDING_MODEL_NAME,
     INPUT_VALUE,
     LLM_INVOCATION_PARAMETERS,
     LLM_MODEL_NAME,
-    LLM_INPUT_MESSAGES,
     LLM_PROMPT_TEMPLATE,
-    LLM_PROMPT_TEMPLATE_VARIABLES,
-    LLM_TOKEN_COUNT_COMPLETION,
-    LLM_TOKEN_COUNT_PROMPT,
     LLM_TOKEN_COUNT_TOTAL,
-    MESSAGE_FUNCTION_CALL_NAME,
     OUTPUT_VALUE,
     RERANKER_MODEL_NAME,
-    RERANKER_OUTPUT_DOCUMENTS,
-    RERANKER_QUERY,
     RERANKER_TOP_K,
-    RETRIEVAL_DOCUMENTS,
-    TOOL_CALL_FUNCTION_NAME,
-    TOOL_NAME,
 )
 
 
@@ -208,17 +192,18 @@ def _finish_tracing(
             del span._attributes["serialized"]
 
         if not _should_skip(event_type):
-            serializable_payload: Dict[str, Any] = {}
+            span_attributes: dict[str, Any] = span._attributes  # type: ignore
+            param_set_payload: dict[str, Any] = {}
             for key, value in span._attributes.items():
                 # Only save the opinionated data to event data and param set
                 if _save_to_param_set(key):
-                    serializable_payload[key] = value
+                    param_set_payload[key] = value
 
             event_type = event_data.event_type
             if event_type == CBEventType.QUERY:
                 tracer.add_query_event(
-                    query=serializable_payload[INPUT_VALUE],
-                    llm_output=serializable_payload[OUTPUT_VALUE],
+                    query=span_attributes[INPUT_VALUE],
+                    llm_output=span_attributes[OUTPUT_VALUE],
                     span=span,
                     should_also_save_in_span=True,
                 )
@@ -231,7 +216,7 @@ def _finish_tracing(
                 doc_info: defaultdict[int, dict[str, Union[str, float]]] = (
                     defaultdict(dict)
                 )
-                for key, value in serializable_payload.items():
+                for key, value in span_attributes.items():
                     if RETRIEVAL_DOCUMENTS in key:
                         # Example of key would be "retrieval.documents.1.document.score"
                         key_parts = key.split(".")
@@ -259,7 +244,7 @@ def _finish_tracing(
                         )
                     )
                 tracer.add_retrieval_event(
-                    query=serializable_payload[INPUT_VALUE],
+                    query=span_attributes[INPUT_VALUE],
                     retrieved_nodes=retrieved_nodes,
                     span=span,
                     should_also_save_in_span=True,
@@ -272,7 +257,7 @@ def _finish_tracing(
                     int, dict[str, Union[str, list[float]]]
                 ] = defaultdict(dict)
                 model_name: str = ""
-                for key, value in serializable_payload.items():
+                for key, value in span_attributes.items():
                     if EMBEDDING_EMBEDDINGS in key:
                         # Example of key would be "embedding.embeddings.0.embedding.text"
                         key_parts = key.split(".")
@@ -322,33 +307,33 @@ def _finish_tracing(
                         },
                     )
             elif event_type == CBEventType.LLM:
-                output = serializable_payload[OUTPUT_VALUE]
+                output = span_attributes[OUTPUT_VALUE]
                 if isinstance(output, str):
                     # If the output is a string, then it's answering a prompt/command
                     metadata = {
-                        LLM_INVOCATION_PARAMETERS: serializable_payload[
+                        LLM_INVOCATION_PARAMETERS: span_attributes[
                             LLM_INVOCATION_PARAMETERS
                         ],
-                        LLM_TOKEN_COUNT_COMPLETION: serializable_payload[
+                        LLM_TOKEN_COUNT_COMPLETION: span_attributes[
                             LLM_TOKEN_COUNT_COMPLETION
                         ],
-                        LLM_TOKEN_COUNT_PROMPT: serializable_payload[
+                        LLM_TOKEN_COUNT_PROMPT: span_attributes[
                             LLM_TOKEN_COUNT_PROMPT
                         ],
-                        LLM_TOKEN_COUNT_TOTAL: serializable_payload[
+                        LLM_TOKEN_COUNT_TOTAL: span_attributes[
                             LLM_TOKEN_COUNT_TOTAL
                         ],
                     }
 
                     # Check if a template exists and resolve if it does
-                    template: Optional[str] = serializable_payload.get(
+                    template: Optional[str] = span_attributes.get(
                         LLM_PROMPT_TEMPLATE
                     )
                     resolved_prompt = None
 
                     if template is not None:
                         # Get the user query from prompt template
-                        template_variables = serializable_payload[
+                        template_variables = span_attributes[
                             LLM_PROMPT_TEMPLATE_VARIABLES
                         ]
                         if isinstance(template_variables, str):
@@ -381,7 +366,7 @@ def _finish_tracing(
                         input_messages: defaultdict[
                             int, dict[str, Union[str, dict[str, Any]]]
                         ] = defaultdict(dict)
-                        for key, value in serializable_payload.items():
+                        for key, value in span_attributes.items():
                             if LLM_INPUT_MESSAGES in key:
                                 # Example of key would be "llm.input_messages.0.message.role"
                                 key_parts = key.split(".")
@@ -408,7 +393,7 @@ def _finish_tracing(
                         query=str(resolved_prompt),  # type: ignore
                         # TODO: Scan for the system prompt in the input messages
                         # system_prompt=...
-                        llm_output=serializable_payload[OUTPUT_VALUE],
+                        llm_output=span_attributes[OUTPUT_VALUE],
                         span=span,
                         should_also_save_in_span=True,
                         metadata=metadata,
@@ -417,16 +402,16 @@ def _finish_tracing(
                     # TODO: Support tool calls
                     pass
             # elif event_type == CBEventType.FUNCTION_CALL:
-            #     tracer.add_tool_call_event(serializable_payload[TOOL_NAME])
+            #     tracer.add_tool_call_event(span_attributes[TOOL_NAME])
             else:
                 tracer.add_rag_event_for_span(
                     event_name=str(event_data.event_type),
                     span=span,
-                    event_data=serializable_payload,
+                    event_data=param_set_payload,
                     should_also_save_in_span=True,
                 )
             tracer.register_params(
-                params=serializable_payload,
+                params=param_set_payload,
                 should_also_save_in_span=True,
                 span=span,
             )
