@@ -104,12 +104,32 @@ class _LastMileLangChainTracer(OpenInferenceTracer):
                     serializable_payload: Dict[str, Any] = {}
                     for key, value in span.attributes.items():
                         serializable_payload[key] = value
-                    self._tracer.add_rag_event_for_span(
-                        event_name=span_kind,
-                        span=span,
-                        event_data=serializable_payload,
-                        should_also_save_in_span=True,
-                    )
+
+                    # Add Rag Specific Events
+                    if span_kind == "llm":
+                        # START DEBUG
+                        # print("||| SPAN")
+                        # print(span.__dict__)
+                        # import sys
+
+                        # sys.exit()
+                        # END DEBUG
+                        self._tracer.add_query_event(  # Type: ignore
+                            query=str(span.attributes.get("input.value")),  # type: ignore
+                            # TODO: Scan for the system prompt in the input messages
+                            # system_prompt=...
+                            llm_output=str(span.attributes.get("output.value")),  # type: ignore
+                            span=span,
+                            should_also_save_in_span=True,
+                            metadata={},
+                        )
+                    else:
+                        self._tracer.add_rag_event_for_span(
+                            event_name=span_kind,
+                            span=span,
+                            event_data=serializable_payload,
+                            should_also_save_in_span=True,
+                        )
                 span.set_attribute(LASTMILE_SPAN_KIND_KEY_NAME, span_kind)
 
             # We can't use real time because the handler may be
