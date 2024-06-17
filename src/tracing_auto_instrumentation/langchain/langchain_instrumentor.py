@@ -104,6 +104,13 @@ class _LastMileLangChainTracer(OpenInferenceTracer):
                     serializable_payload: Dict[str, Any] = {}
                     for key, value in span.attributes.items():
                         serializable_payload[key] = value
+                    # if span_kind == "retriever":
+                    #     self._tracer.add_retrival_event(
+                            
+                    #     )
+                    # elif span_kind == "llm":
+                    #     self._tracer.add_query_event(
+                    #     )
                     self._tracer.add_rag_event_for_span(
                         event_name=span_kind,
                         span=span,

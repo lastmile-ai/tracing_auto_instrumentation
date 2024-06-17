@@ -1,6 +1,5 @@
 import logging
 import inspect
-import json
 
 from abc import abstractmethod
 from typing import Any, Protocol
@@ -9,13 +8,8 @@ from ibm_watsonx_ai.foundation_models import Model
 
 from lastmile_eval.rag.debugger.api import LastMileTracer
 from lastmile_eval.rag.debugger.tracing.decorators import (
-    _get_serializable_input,
+    _try_log_input,
     _try_log_output,
-)
-
-from lastmile_eval.rag.debugger.common.query_trace_types import (
-    LLMOutputReceived,
-    PromptResolved,
 )
 
 
@@ -45,20 +39,6 @@ class IBMWatsonXGenerateTextStreamMethod(Protocol):
         pass
 
 
-# logger.info("Generate text:")
-
-# logger.info(model.generate_text("the quick brown fox"))
-
-
-# logger.info("Generate text stream")
-
-# for t in model.generate_text_stream("the quick brown fox"):
-#     logger.info(t, end="")
-
-# logger.info("Details:")
-# logger.info(model.get_details())
-
-
 class GenerateWrapper:
     def __init__(
         self, generate: IBMWatsonXGenerateMethod, tracer: LastMileTracer
@@ -67,21 +47,38 @@ class GenerateWrapper:
         self.tracer = tracer
 
     def generate(self, *args: Any, **kwargs: Any) -> Any:
+        prompt = kwargs["prompt"] if "prompt" in kwargs else args[0]
         f_sig = inspect.signature(self.generate_fn)
         with self.tracer.start_as_current_span("text-generate-span") as span:
-            input_serializable = _get_serializable_input(f_sig, args, kwargs)
-            span.set_attribute("input", json.dumps(input_serializable))
-            response = self.generate_fn(  # will proably be dict
+            _try_log_input(span, f_sig, args, kwargs)
+            response = self.generate_fn(  # probably dict, the Watson generate_text method returns Any
                 *args, **kwargs
             )
             _try_log_output(span, response)
 
-            self.tracer.add_rag_event_for_span(
-                "generate",
+            llm_result: dict[str, Any] = response["results"][0]
+            llm_output: str = str(llm_result["generated_text"]).strip()
+            self.tracer.add_query_event(
+                query=prompt,
+                llm_output=llm_output,
                 span=span,
-                input=input_serializable,
-                output=response,
                 should_also_save_in_span=True,
+            )
+
+            trace_params: dict[str, Any] = {
+                "model_id": response["model_id"],
+                "model_version": response["model_version"],
+                "llm_output": llm_result["generated_text"],
+                "generated_token_count": llm_result["generated_token_count"],
+                "input_token_count": llm_result["input_token_count"],
+            }
+            self.tracer.register_params(trace_params)
+
+            self.tracer.add_rag_event_for_trace(
+                event_name="generate",
+                input=prompt,
+                output=llm_output,
+                event_data=trace_params,
             )
             return response
 
@@ -96,21 +93,36 @@ class GenerateTextWrapper:
         self.tracer = tracer
 
     def generate_text(self, *args: Any, **kwargs: Any) -> Any:
+        prompt = kwargs["prompt"] if "prompt" in kwargs else args[0]
         f_sig = inspect.signature(self.generate_text_fn)
         with self.tracer.start_as_current_span("text-generate-span") as span:
-            input_serializable = _get_serializable_input(f_sig, args, kwargs)
-            span.set_attribute("input", json.dumps(input_serializable))
-            response = self.generate_text_fn(  # will proably be str
+            _try_log_input(span, f_sig, args, kwargs)
+            response = self.generate_text_fn(  # probably str, the Watson generate_text method returns Any
                 *args, **kwargs
             )
             _try_log_output(span, response)
 
-            self.tracer.add_rag_event_for_span(
-                "generate",
+            llm_output: str = str(
+                response
+            ).strip()  # .replace("\r", "").replace("\n", "")
+            self.tracer.add_query_event(
+                query=prompt,
+                llm_output=llm_output,
                 span=span,
-                input=input_serializable,
-                output=response,
                 should_also_save_in_span=True,
+            )
+
+            trace_params: dict[str, Any] = {
+                "model_id": response["model_id"],
+                "model_version": response["model_version"],
+            }
+            self.tracer.register_params(trace_params)
+
+            self.tracer.add_rag_event_for_trace(
+                event_name="generate_text",
+                input=prompt,
+                output=llm_output,
+                event_data=trace_params,
             )
             return response
 
@@ -130,60 +142,10 @@ class IBMWatsonXModelWrapper(NamedWrapper[Model]):
         ).generate_text
 
     def generate(self, *args: Any, **kwargs: Any) -> Any:
-        res = self.generate_fn(*args, **kwargs)
-
-        prompt: str = kwargs["prompt"] if "prompt" in kwargs else args[0]
-
-        logger.info(f"invoking tracer to mark query event: {prompt=}")
-        tracer_res = self.tracer.mark_rag_query_trace_event(
-            PromptResolved(fully_resolved_prompt=prompt),
-        )
-        logger.info(f"did call `mark_rag_query_trace_event`: {tracer_res=}")
-
-        llm_result: dict = res["results"][0]
-        llm_output: dict = llm_result["generated_text"]
-
-        logger.info(f"invoking tracer to mark query event: {llm_output=}")
-        tracer_res = self.tracer.mark_rag_query_trace_event(
-            LLMOutputReceived(llm_output=llm_output)
-        )
-        logger.info(f"did call `mark_rag_query_trace_event`: {tracer_res=}")
-
-        trace_params: dict = {
-            "model_id": res["model_id"],
-            "model_version": res["model_version"],
-            "llm_output": llm_result["generated_text"],
-            "generated_tokens": llm_result["generated_text"],
-            "generated_token_count": llm_result["generated_token_count"],
-            "input_token_count": llm_result["input_token_count"],
-        }
-
-        logger.info(f"about to call `register_params`: {trace_params=}")
-        self.tracer.register_params(trace_params)
-        logger.info("did call `register_params`")
-
-        return res
+        return self.generate_fn(*args, **kwargs)
 
     def generate_text(self, *args: Any, **kwargs: Any) -> Any:
-        res = self.generate_text_fn(*args, **kwargs)
-
-        prompt: str = kwargs["prompt"] if "prompt" in kwargs else args[0]
-
-        logger.info(f"invoking tracer to mark query event: {prompt=}")
-        tracer_res = self.tracer.mark_rag_query_trace_event(
-            PromptResolved(fully_resolved_prompt=prompt),
-        )
-        logger.info(f"did call `mark_rag_query_trace_event`: {tracer_res=}")
-
-        llm_output: str = res.replace("\r", "").replace("\n", "")
-
-        logger.info(f"invoking tracer to mark query event: {llm_output=}")
-        tracer_res = self.tracer.mark_rag_query_trace_event(
-            LLMOutputReceived(llm_output=llm_output)
-        )
-
-        logger.info(f"did call `mark_rag_query_trace_event`: {tracer_res=}")
-        return res
+        return self.generate_text_fn(*args, **kwargs)
 
 
 def wrap_watson(
