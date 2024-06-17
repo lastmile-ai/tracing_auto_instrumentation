@@ -2,16 +2,16 @@
 
 Tracing Auto Instrumentation allows you to easily instrument popular LLM frameworks for tracing your LLM application. It is built with and on top of the LastMile Rag Debugger: [https://rag.lastmileai.dev/](https://rag.lastmileai.dev/).
 
-## Examples
+## Supported Frameworks/Libraries and Examples:
 
-Supported Frameworks and Libraries:
+Sure, here's the table with the example links formatted as bullet points:
 
-| Framework/Library                                                                                     | Example Link                                                                                                  |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [OpenAI](https://github.com/lastmile-ai/eval-cookbook/blob/main/tutorials/distributed_tracing.ipynb)     | [OpenAI Example](https://github.com/lastmile-ai/eval-cookbook/blob/main/tutorials/distributed_tracing.ipynb)     |
-| [IBM](https://github.com/lastmile-ai/eval-cookbook/blob/main/tutorials/distributed_tracing.ipynb)        | [IBM Example](https://github.com/lastmile-ai/eval-cookbook/blob/main/tutorials/distributed_tracing.ipynb)        |
-| [LangChain](https://github.com/lastmile-ai/eval-cookbook/blob/main/tutorials/distributed_tracing.ipynb)  | [LangChain Example](https://github.com/lastmile-ai/eval-cookbook/blob/main/tutorials/distributed_tracing.ipynb)  |
-| [LLamaIndex](https://github.com/lastmile-ai/eval-cookbook/blob/main/tutorials/distributed_tracing.ipynb) | [LLamaIndex Example](https://github.com/lastmile-ai/eval-cookbook/blob/main/tutorials/distributed_tracing.ipynb) |
+| Framework/Library | Example Link                                                                                                                                                                                                                                                                |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI            | - [openai_instrumentation.ipynb](https://github.com/lastmile-ai/eval-cookbook/blob/main/auto-instrumentors/openai_instrumentation.ipynb) <br /> -[openai_streaming.ipynb](https://github.com/lastmile-ai/eval-cookbook/blob/main/auto-instrumentors/openai_streaming.ipynb) |
+| IBM               | - [ibm.ipynb](https://github.com/lastmile-ai/eval-cookbook/blob/main/auto-instrumentors/ibm.ipynb) <br />-[ibm_granite_tutorial.ipynb](https://github.com/lastmile-ai/eval-cookbook/blob/main/auto-instrumentors/ibm_granite_tutorial.ipynb)                                |
+| LangChain         | - [langchain.ipynb](https://github.com/lastmile-ai/eval-cookbook/blob/main/auto-instrumentors/langchain.ipynb)                                                                                                                                                              |
+| LLamaIndex        | - [llama_index.ipynb](https://github.com/lastmile-ai/eval-cookbook/blob/main/auto-instrumentors/llama_index.ipynb) <br />-[llama_index_function_calls.ipynb](https://github.com/lastmile-ai/eval-cookbook/blob/main/auto-instrumentors/llama_index_function_calls.ipynb)    |
 
 ## Getting Started
 
