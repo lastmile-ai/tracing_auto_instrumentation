@@ -1,15 +1,13 @@
 import argparse
-import dotenv
 import logging
 import os
 import sys
-
 from enum import Enum
 
+import dotenv
 from ibm_watsonx_ai.foundation_models import Model
 from ibm_watsonx_ai.foundation_models.utils.enums import ModelTypes
 from ibm_watsonx_ai.metanames import GenTextParamsMetaNames as GenParams
-
 from lastmile_eval.rag.debugger.api import LastMileTracer
 from lastmile_eval.rag.debugger.tracing.sdk import get_lastmile_tracer
 
@@ -58,6 +56,7 @@ def run_generate(prompt: str, trace_name: str) -> None:
         tracer.log("start watsonx generate...")
         response = wrapper.generate(prompt)
         tracer.log(f"watsonx generate: {response=}")
+        tracer.add_query_event(query=prompt, llm_output=response, span=span)
 
 
 def run_generate_text(prompt: str, trace_name: str) -> None:
@@ -75,6 +74,7 @@ def run_generate_text(prompt: str, trace_name: str) -> None:
         tracer.log("start watsonx generate_text...")
         response = wrapper.generate_text(prompt)
         tracer.log(f"watsonx generate_text: {response=}")
+        tracer.add_query_event(query=prompt, llm_output=response, span=span)
 
 
 def main():
