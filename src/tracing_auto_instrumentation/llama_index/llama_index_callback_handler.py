@@ -90,6 +90,9 @@ class LlamaIndexCallbackHandler(OpenInferenceTraceCallbackHandler):
         )
         super().__init__(tracer)
 
+    def get_tracer(self) -> LastMileTracer:
+        return self._tracer
+
     def on_event_end(
         self,
         event_type: CBEventType,

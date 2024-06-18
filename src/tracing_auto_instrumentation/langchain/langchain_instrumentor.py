@@ -57,6 +57,9 @@ class LangChainInstrumentor(BaseInstrumentor):
             project_name=project_name,
         )
 
+    def get_tracer(self) -> LastMileTracer:
+        return self._tracer
+
     def instrumentation_dependencies(self) -> Collection[str]:
         return _instruments
 
