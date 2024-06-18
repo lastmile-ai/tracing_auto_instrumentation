@@ -11,7 +11,6 @@ from openinference.instrumentation.langchain._tracer import (
 from openinference.instrumentation.langchain.package import _instruments
 from openinference.instrumentation.langchain.version import __version__
 from opentelemetry import context as context_api
-from opentelemetry import trace as trace_api
 from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY
 from opentelemetry.sdk.trace import Span
 from opentelemetry.instrumentation.instrumentor import (
@@ -20,12 +19,14 @@ from opentelemetry.instrumentation.instrumentor import (
 from wrapt import wrap_function_wrapper
 
 # TODO: Fix typing
-from lastmile_eval.rag.debugger.tracing.sdk import get_lastmile_tracer
+from lastmile_eval.rag.debugger.api import LastMileTracer
+from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
 
 from lastmile_eval.rag.debugger.common.utils import (
-    DEFAULT_PROJECT_NAME,
     LASTMILE_SPAN_KIND_KEY_NAME,
 )
+
+from ..utils import DEFAULT_TRACER_NAME_PREFIX
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -45,13 +46,15 @@ class LangChainInstrumentor(BaseInstrumentor):
 
     def __init__(
         self,
-        project_name: str = DEFAULT_PROJECT_NAME,
+        project_name: Optional[str] = None,
         lastmile_api_token: Optional[str] = None,
     ) -> None:
         super().__init__()
-        self._tracer = get_lastmile_tracer(
-            tracer_name=project_name,
+        self._tracer: LastMileTracer = get_lastmile_tracer(
+            tracer_name=project_name
+            or (DEFAULT_TRACER_NAME_PREFIX + " - Langchain"),
             lastmile_api_token=lastmile_api_token,
+            project_name=project_name,
         )
 
     def instrumentation_dependencies(self) -> Collection[str]:
@@ -101,10 +104,18 @@ class _LastMileLangChainTracer(OpenInferenceTracer):
                     serializable_payload: Dict[str, Any] = {}
                     for key, value in span.attributes.items():
                         serializable_payload[key] = value
+                    # if span_kind == "retriever":
+                    #     self._tracer.add_retrival_event(
+                            
+                    #     )
+                    # elif span_kind == "llm":
+                    #     self._tracer.add_query_event(
+                    #     )
                     self._tracer.add_rag_event_for_span(
                         event_name=span_kind,
                         span=span,
                         event_data=serializable_payload,
+                        should_also_save_in_span=True,
                     )
                 span.set_attribute(LASTMILE_SPAN_KIND_KEY_NAME, span_kind)
 
@@ -120,7 +131,7 @@ class _BaseCallbackManagerInit:
     __slots__ = ("_tracer", "_cls")
 
     def __init__(
-        self, tracer: trace_api.Tracer, cls: Type[_LastMileLangChainTracer]
+        self, tracer: LastMileTracer, cls: Type[_LastMileLangChainTracer]
     ):
         self._tracer = tracer
         self._cls = cls

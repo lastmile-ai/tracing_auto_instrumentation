@@ -1,3 +1,6 @@
+# Common dependencies
 lastmile_eval
-ibm-watsonx-ai
-openai
+html2text
+pandas
+pyarrow
+tqdm
