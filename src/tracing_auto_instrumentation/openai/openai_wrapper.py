@@ -387,69 +387,7 @@ class EmbeddingWrapper:
         )
 
 
-class ChatCompletionV0Wrapper(NamedWrapper):
-    def __init__(self, chat, tracer):
-        self.__chat = chat
-        self.tracer = tracer
-        super().__init__(chat)
-
-    def create(self, *args, **kwargs):
-        response = ChatCompletionWrapper(
-            self.__chat.create, self.__chat.acreate, self.tracer
-        ).create(*args, **kwargs)
-
-        stream = kwargs.get("stream", False)
-        if not stream:
-            non_streaming_response_value = next(response)
-            return non_streaming_response_value
-        return response
-
-    async def acreate(self, *args, **kwargs):
-        response = ChatCompletionWrapper(
-            self.__chat.create, self.__chat.acreate, self.tracer
-        ).acreate(*args, **kwargs)
-        stream = kwargs.get("stream", False)
-
-        if not stream:
-            non_streaming_response_value = await anext(response)
-            return non_streaming_response_value
-        return response
-
-
-class EmbeddingV0Wrapper(NamedWrapper):
-    def __init__(self, embedding, tracer):
-        self.__embedding = embedding
-        self.tracer = tracer
-        super().__init__(embedding)
-
-    def create(self, *args, **kwargs):
-        return EmbeddingWrapper(
-            self.__embedding.create, self.__embedding.acreate, self.tracer
-        ).create(*args, **kwargs)
-
-    async def acreate(self, *args, **kwargs):
-        response = await ChatCompletionWrapper(
-            self.__embedding.create, self.__embedding.acreate, self.tracer
-        ).acreate(*args, **kwargs)
-        stream = kwargs.get("stream", False)
-        if not stream:
-            non_streaming_response_value = await anext(response)
-            return non_streaming_response_value
-        return response
-
-
-# This wraps 0.*.* versions of the openai module, eg https://github.com/openai/openai-python/tree/v0.28.1
-class OpenAIV0Wrapper(NamedWrapper):
-    def __init__(self, openai, tracer):
-        super().__init__(openai)
-        self.tracer = tracer
-        self.ChatCompletion = ChatCompletionV0Wrapper(
-            openai.ChatCompletion, tracer
-        )
-        self.Embedding = EmbeddingV0Wrapper(openai.Embedding, tracer)
-
-
-class CompletionsV1Wrapper(NamedWrapper):
+class CompletionsWrapper(NamedWrapper):
     def __init__(self, completions, tracer):
         self.__completions = completions
         self.tracer = tracer
@@ -469,7 +407,7 @@ class CompletionsV1Wrapper(NamedWrapper):
         return response
 
 
-class EmbeddingV1Wrapper(NamedWrapper):
+class EmbeddingWrapper(NamedWrapper):
     def __init__(self, embedding, tracer):
         self.__embedding = embedding
         self.tracer = tracer
@@ -481,7 +419,7 @@ class EmbeddingV1Wrapper(NamedWrapper):
         ).create(*args, **kwargs)
 
 
-class AsyncCompletionsV1Wrapper(NamedWrapper):
+class AsyncCompletionsWrapper(NamedWrapper):
     def __init__(self, completions, tracer):
         self.__completions = completions
         self.tracer = tracer
@@ -499,7 +437,7 @@ class AsyncCompletionsV1Wrapper(NamedWrapper):
         return response
 
 
-class AsyncEmbeddingV1Wrapper(NamedWrapper):
+class AsyncEmbeddingWrapper(NamedWrapper):
     def __init__(self, embedding, tracer):
         self.__embedding = embedding
         self.tracer = tracer
@@ -511,7 +449,7 @@ class AsyncEmbeddingV1Wrapper(NamedWrapper):
         ).acreate(*args, **kwargs)
 
 
-class ChatV1Wrapper(NamedWrapper[Chat | AsyncChat]):
+class ChatWrapper(NamedWrapper[Chat | AsyncChat]):
     def __init__(self, chat: Chat | AsyncChat, tracer: LastMileTracer):
         super().__init__(chat)
         self.tracer = tracer
@@ -519,17 +457,17 @@ class ChatV1Wrapper(NamedWrapper[Chat | AsyncChat]):
         import openai
 
         if isinstance(chat.completions, AsyncCompletions):
-            self.completions = AsyncCompletionsV1Wrapper(
+            self.completions = AsyncCompletionsWrapper(
                 chat.completions, self.tracer
             )
         else:
-            self.completions = CompletionsV1Wrapper(
+            self.completions = CompletionsWrapper(
                 chat.completions, self.tracer
             )
 
 
-# This wraps 1.*.* versions of the openai module, eg https://github.com/openai/openai-python/tree/v1.1.0
-class OpenAIV1Wrapper(
+# This wraps 1.*.* versions of the openai module, eg https://github.com/openai/openai-python/tree/.1.0
+class OpenAIWrapper(
     NamedWrapper[openai_module.OpenAI | openai_module.AsyncOpenAI]
 ):
     def __init__(
@@ -540,14 +478,14 @@ class OpenAIV1Wrapper(
         super().__init__(client)
         self.tracer: LastMileTracer = tracer
 
-        self.chat = ChatV1Wrapper(client.chat, self.tracer)
+        self.chat = ChatWrapper(client.chat, self.tracer)
 
         if isinstance(client.embeddings, AsyncEmbeddings):
-            self.embeddings = AsyncEmbeddingV1Wrapper(
+            self.embeddings = AsyncEmbeddingWrapper(
                 client.embeddings, self.tracer
             )
         else:
-            self.embeddings = EmbeddingV1Wrapper(
+            self.embeddings = EmbeddingWrapper(
                 client.embeddings, self.tracer
             )
 
@@ -555,17 +493,13 @@ class OpenAIV1Wrapper(
 def wrap(
     client_or_module: openai_module.OpenAI | openai_module.AsyncOpenAI,
     tracer: LastMileTracer,
-) -> OpenAIV0Wrapper | OpenAIV1Wrapper:
+) -> OpenAIWrapper:
     """
-    Wrap the openai module (pre v1) or OpenAI client (post v1) to add tracing.
+    Wrap the openai module (pre ) or OpenAI client (post ) to add tracing.
 
     :param client_or_module: The openai module or OpenAI client
     """
-    if hasattr(client_or_module, "chat") and hasattr(
-        client_or_module.chat, "completions"
-    ):
-        return OpenAIV1Wrapper(client_or_module, tracer)
-    return OpenAIV0Wrapper(client_or_module, tracer)
+    OpenAIWrapper(client_or_module, tracer)
 
 
 wrap_openai = wrap
