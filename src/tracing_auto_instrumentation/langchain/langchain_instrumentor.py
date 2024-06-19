@@ -1,5 +1,7 @@
-from typing import Any, Dict, Callable, Collection, Optional, Type
+from typing import Any, Dict, Callable, Collection, Optional, Type, Union
+from collections import defaultdict
 
+import json
 import logging
 
 # LangChain
@@ -33,6 +35,8 @@ from wrapt import wrap_function_wrapper
 # lastmile internals
 from lastmile_eval.rag.debugger.api import (
     LastMileTracer,
+    RetrievedNode,
+    TextEmbedding,
 )  # TODO(b7r6): fix typing...
 
 from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
@@ -129,19 +133,69 @@ class _LastMileLangChainTracer(OpenInferenceTracer):
         logger.info(f"handling span kind: {span_kind}")
 
         # for supported span types, trace that...
-        if not _should_skip(span_kind):
+        if _should_process(span_kind):
+            span_attributes: dict[str, Any] = span._attributes  # type: ignore
             serializable_payload: Dict[str, Any] = {}
 
             for key, value in span.attributes.items():
-                logger.info(f"span attribute: {key} - {value}")
-                serializable_payload[key] = value
+                serializable_payload[str(key)] = value
 
-            self._tracer.add_rag_event_for_span(
-                event_name=span_kind,
-                span=span,
-                event_data=serializable_payload,
-                should_also_save_in_span=True,
-            )
+            if "retriever" == span_kind:
+                # doc_info contains as key the index of the document and value the
+                # info of the document
+                # Example: {0: {'id': 'doc1', 'score': 0.5, 'content': 'doc1 content'}}
+                doc_info: defaultdict[int, dict[str, Union[str, float]]] = (
+                    defaultdict(dict)
+                )
+                for key, value in span_attributes.items():
+                    if "retrieval.documents" in key:
+                        # Example of key would be retrieval.documents.1.document.content
+                        key_parts = key.split(".")
+                        doc_index: int = -1
+                        for part in key_parts:
+                            if part.isnumeric():
+                                doc_index = int(part)
+                        if doc_index == -1:
+                            continue
+
+                        # info will be either "metadata", "content" (score not included)
+                        info_type = key.split(".")[-1]
+                        doc_info[doc_index][info_type] = value
+
+                # build list of retrieved nodes
+                retrieved_nodes: list[RetrievedNode] = []
+                # Sort the keys (document index) to add them in correct order
+                # to the retrieved nodes array
+                for i, info_dict in enumerate(
+                    dict(sorted(doc_info.items())).values()
+                ):
+                    # OpenTelemetry does not allow dict values so metadata
+                    # is stored as a string and we need to json load it
+                    source = json.loads(info_dict.get("metadata", "{}")).get(
+                        "source", "file not found"
+                    )
+                    retrieved_nodes.append(
+                        RetrievedNode(
+                            id=f"idx-{i}-{source}",  # node id is not included in LangChain
+                            score=-1.0,  # score is not included LangChain retrieve event
+                            text=str(info_dict["content"]),
+                        )
+                    )
+
+                self._tracer.add_retrieval_event(
+                    query=span_attributes.get("input.value", ""),
+                    retrieved_nodes=retrieved_nodes,
+                    span=span,
+                    should_also_save_in_span=True,
+                    metadata={"top_k": len(retrieved_nodes)},
+                )
+            else:
+                self._tracer.add_rag_event_for_span(
+                    event_name=span_kind,
+                    span=span,
+                    event_data=serializable_payload,
+                    should_also_save_in_span=True,
+                )
 
             span.set_attribute(LASTMILE_SPAN_KIND_KEY_NAME, span_kind)
 
@@ -153,7 +207,7 @@ class _LastMileLangChainTracer(OpenInferenceTracer):
         span.end(end_time=end_time_utc_nano)
 
 
-def _should_skip(event_type: str) -> bool:
+def _should_process(event_type: str) -> bool:
     """
     The LangChain event types are:
         1. "tool"
@@ -168,10 +222,10 @@ def _should_skip(event_type: str) -> bool:
     """
 
     SUPPORTED_EVENT_TYPES = set(
-        ["tool" "retriever" "chat_model" "llm" "chain" "parser" "prompt"]
+        ["tool", "retriever", "chat_model", "llm", "parser", "prompt"]
     )
 
-    return event_type not in SUPPORTED_EVENT_TYPES
+    return event_type in SUPPORTED_EVENT_TYPES
 
 
 # TODO(b7r6): this seems a bit ad-hoc and error-prone, figure out if we can wire into
