@@ -1,4 +1,4 @@
-# Build and publish the python-sdk to pypi. This workflow does NOT update the version number. Open a pr to update the version number and merge it to master before running this workflow.
+# Build and publish the python-sdk to pypi.
 # This workflow is triggered manually. see https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow
 name: Build and Publish Python Package to PyPI
 
@@ -6,6 +6,15 @@ name: Build and Publish Python Package to PyPI
 on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+    inputs:
+      bumpPatchVersion:
+        description: "Auto-increment patch version and commit changes."
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - false
+          - true
 
 jobs:
   build-release:
@@ -21,6 +30,22 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: "3.10" # don't know what the impact of this is
+      - name: Increment version in pyproject.toml
+        if: ${{ github.event.inputs.bumpPatchVersion == 'true' }}
+        run: |
+          python -c "import re; open('pyproject.toml', 'r+', encoding='utf-8').write(re.sub(r'(version\s*=\s*\"\\d+\\.\\d+\\.)(\\d+)', lambda m: f'{m.group(1)}{int(m.group(2))+1}', open('pyproject.toml').read()))"
+
+      - name: Commit and push changes
+        if: ${{ github.event.inputs.bumpPatchVersion == 'true' }}
+        run: |
+          version=$(python -c "print(next(line.split('=')[1].strip().strip('\"') for line in open('pyproject.toml') if line.startswith('version')))")
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add pyproject.toml
+          git commit -m "Increment version to $version"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Package
         run: |
           pip install build && python -m build
