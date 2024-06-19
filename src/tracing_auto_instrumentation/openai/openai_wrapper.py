@@ -1,17 +1,41 @@
 import json
 import time
-from typing import Any, Mapping, Optional
+from typing import (
+    Any,
+    Callable,
+    Coroutine,
+    Generator,
+    Mapping,
+    Optional,
+    ParamSpecArgs,
+    ParamSpecKwargs,
+    TypeVar,
+    cast,
+)
 
-import openai as openai_module
+import openai
 from lastmile_eval.rag.debugger.api import LastMileTracer
-from openai.resources.chat import AsyncChat, AsyncCompletions, Chat
-from openai.resources.embeddings import AsyncEmbeddings
-from openai.types.chat import ChatCompletionChunk
+from openai.resources.chat import (
+    AsyncChat,
+    AsyncCompletions,
+    Chat,
+    Completions,
+)
+from openai.resources.embeddings import (
+    AsyncEmbeddings,
+    Embeddings,
+)
+from openai.types import CreateEmbeddingResponse
+from openai.types.chat import ChatCompletionChunk, ChatCompletion
+from openai import AsyncStream, Stream
 
 from ..utils import (
     NamedWrapper,
     json_serialize_anything,
 )
+
+T_co = TypeVar("T_co", covariant=True)  # Success type
+U = TypeVar("U")
 
 # pylint: disable=missing-function-docstring
 
@@ -20,7 +44,7 @@ def flatten_json(obj: Mapping[str, Any]):
     return {k: json_serialize_anything(v) for k, v in obj.items()}
 
 
-def merge_dicts(d1, d2):
+def merge_dicts(d1: dict[T_co, Any], d2: dict[T_co, Any]) -> dict[T_co, Any]:
     return {**d1, **d2}
 
 
@@ -65,27 +89,28 @@ def postprocess_streaming_results(all_results: list[Any]) -> Mapping[str, Any]:
     }
 
 
-class ChatCompletionWrapper:
+class ChatCompletionWrapperImpl:
     def __init__(
         self,
-        create_fn,
-        acreate_fn,
+        create_fn: Callable[  # TODO: Map this directly to OpenAI package
+            ..., (ChatCompletion | Stream[ChatCompletionChunk])
+        ],
         tracer: LastMileTracer,
     ):
         self.create_fn = create_fn
-        self.acreate_fn = acreate_fn
         self.tracer: LastMileTracer = tracer
 
-    def create(self, *args, **kwargs):
-        params = self._parse_params(kwargs)
+    def create(self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs):
+        params = _parse_params(kwargs)
         params_flat = flatten_json(params)
-        stream = kwargs.get("stream", False)
 
         rag_event_input = json_serialize_anything(params)
-        with self.tracer.start_as_current_span("chat-completion-span") as span:
+        with self.tracer.start_as_current_span(
+            "chat-completion-create"
+        ) as span:
             start = time.time()
             raw_response = self.create_fn(*args, **kwargs)
-            if stream:
+            if isinstance(raw_response, Stream):
 
                 def gen():
                     first = True
@@ -96,7 +121,7 @@ class ChatCompletionWrapper:
                                 "time_to_first_token", time.time() - start
                             )
                             first = False
-                        if isinstance(item, ChatCompletionChunk):
+                        if isinstance(item, ChatCompletionChunk):  # type: ignore
                             # Ignore multiple responses for now,
                             # will support in future PR, by looking at the index in choice dict
                             # We need to also support tool call handling (as well as tool
@@ -138,7 +163,7 @@ class ChatCompletionWrapper:
                 log_response = (
                     raw_response
                     if isinstance(raw_response, dict)
-                    else raw_response.dict()
+                    else raw_response.model_dump()
                 )
                 span.set_attributes(
                     {
@@ -195,16 +220,32 @@ class ChatCompletionWrapper:
                 # using return next(response)
                 yield raw_response
 
-    async def acreate(self, *args, **kwargs):
-        params = self._parse_params(kwargs)
-        stream = kwargs.get("stream", False)
+
+class AsyncChatCompletionWrapperImpl:
+    def __init__(
+        self,
+        create_fn: Callable[  # TODO: Map this directly to OpenAI package
+            ...,
+            Coroutine[
+                Any, Any, ChatCompletion | AsyncStream[ChatCompletionChunk]
+            ],
+        ],
+        tracer: LastMileTracer,
+    ):
+        self.create_fn = create_fn
+        self.tracer: LastMileTracer = tracer
+
+    async def create(self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs):
+        params = _parse_params(kwargs)
 
         rag_event_input = json_serialize_anything(params)
-        with self.tracer.start_as_current_span("chat-completion") as span:
+        with self.tracer.start_as_current_span(
+            "async-chat-completion-create"
+        ) as span:
             span.set_attributes(flatten_json(params))
             start = time.time()
-            raw_response = await self.acreate_fn(*args, **kwargs)
-            if stream:
+            raw_response = await self.create_fn(*args, **kwargs)
+            if isinstance(raw_response, AsyncStream):
 
                 async def gen():
                     first = True
@@ -215,7 +256,7 @@ class ChatCompletionWrapper:
                                 "time_to_first_token", time.time() - start
                             )
                             first = False
-                        if isinstance(item, ChatCompletionChunk):
+                        if isinstance(item, ChatCompletionChunk):  # type: ignore
                             # Ignore multiple responses for now,
                             # will support in future PR, by looking at the index in choice dict
                             # We need to also support tool call handling (as well as tool
@@ -260,7 +301,7 @@ class ChatCompletionWrapper:
                 log_response = (
                     raw_response
                     if isinstance(raw_response, dict)
-                    else raw_response.dict()
+                    else raw_response.model_dump()
                 )
                 span.set_attributes(
                     {
@@ -314,39 +355,43 @@ class ChatCompletionWrapper:
                 # using return next(response)
                 yield raw_response
 
-    @classmethod
-    def _parse_params(cls, params):
-        # First, destructively remove span_info
-        ret = params.pop("span_info", {})
 
-        # Then, copy the rest of the params
-        params = {**params}
-        messages = params.pop("messages", None)
-        return merge_dicts(
-            ret,
-            {
-                "input": messages,
-                "metadata": params,
-            },
-        )
+def _parse_params(params: dict[str, ParamSpecKwargs]):
+    # First, destructively remove span_info
+    empty_dict: dict[str, Any] = {}
+    ret = cast(dict[str, Any], params.pop("span_info", empty_dict))
+
+    # Then, copy the rest of the params
+    params = {**params}
+    messages = params.pop("messages", None)
+    return merge_dicts(
+        ret,
+        {
+            "input": messages,
+            "metadata": params,
+        },
+    )
 
 
-class EmbeddingWrapper:
-    def __init__(self, create_fn, acreate_fn, tracer):
+class EmbeddingWrapperImpl:
+    def __init__(
+        self,
+        create_fn: Callable[..., CreateEmbeddingResponse],
+        tracer: LastMileTracer,
+    ):
         self.create_fn = create_fn
-        self.acreate_fn = acreate_fn
-        self.tracer = tracer
+        self.tracer: LastMileTracer = tracer
 
-    def create(self, *args, **kwargs):
-        params = self._parse_params(kwargs)
-        params_flat = flatten_json(params)
+    def create(self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs):
+        params = _parse_params(kwargs)
+        # params_flat = flatten_json(params)
 
         with self.tracer.start_as_current_span("embedding") as span:
             raw_response = self.create_fn(*args, **kwargs)
             log_response = (
                 raw_response
                 if isinstance(raw_response, dict)
-                else raw_response.dict()
+                else raw_response.model_dump()
             )
             span.set_attributes(
                 {
@@ -360,15 +405,25 @@ class EmbeddingWrapper:
             )
             return raw_response
 
-    async def acreate(self, *args, **kwargs):
-        params = self._parse_params(kwargs)
 
-        with self.tracer.start_as_current_span("embedding") as span:
-            raw_response = await self.acreate_fn(*args, **kwargs)
+class AsyncEmbeddingWrapperImpl:
+    def __init__(
+        self,
+        create_fn: Callable[..., Coroutine[Any, Any, CreateEmbeddingResponse]],
+        tracer: LastMileTracer,
+    ):
+        self.create_fn = create_fn
+        self.tracer: LastMileTracer = tracer
+
+    async def create(self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs):
+        params = _parse_params(kwargs)
+
+        with self.tracer.start_as_current_span("async-embedding") as span:
+            raw_response = await self.create_fn(*args, **kwargs)
             log_response = (
                 raw_response
                 if isinstance(raw_response, dict)
-                else raw_response.dict()
+                else raw_response.model_dump()
             )
             span.set_attributes(
                 {
@@ -382,95 +437,30 @@ class EmbeddingWrapper:
             )
             return raw_response
 
-    @classmethod
-    def _parse_params(cls, params):
-        # First, destructively remove span_info
-        ret = params.pop("span_info", {})
 
-        params = {**params}
-        input = params.pop("input", None)
-
-        return merge_dicts(
-            ret,
-            {
-                "input": input,
-                "metadata": params,
-            },
-        )
-
-
-class ChatCompletionV0Wrapper(NamedWrapper):
-    def __init__(self, chat, tracer):
-        self.__chat = chat
-        self.tracer = tracer
-        super().__init__(chat)
-
-    def create(self, *args, **kwargs):
-        response = ChatCompletionWrapper(
-            self.__chat.create, self.__chat.acreate, self.tracer
-        ).create(*args, **kwargs)
-
-        stream = kwargs.get("stream", False)
-        if not stream:
-            non_streaming_response_value = next(response)
-            return non_streaming_response_value
-        return response
-
-    async def acreate(self, *args, **kwargs):
-        response = ChatCompletionWrapper(
-            self.__chat.create, self.__chat.acreate, self.tracer
-        ).acreate(*args, **kwargs)
-        stream = kwargs.get("stream", False)
-
-        if not stream:
-            non_streaming_response_value = await anext(response)
-            return non_streaming_response_value
-        return response
-
-
-class EmbeddingV0Wrapper(NamedWrapper):
-    def __init__(self, embedding, tracer):
-        self.__embedding = embedding
-        self.tracer = tracer
-        super().__init__(embedding)
-
-    def create(self, *args, **kwargs):
-        return EmbeddingWrapper(
-            self.__embedding.create, self.__embedding.acreate, self.tracer
-        ).create(*args, **kwargs)
-
-    async def acreate(self, *args, **kwargs):
-        response = await ChatCompletionWrapper(
-            self.__embedding.create, self.__embedding.acreate, self.tracer
-        ).acreate(*args, **kwargs)
-        stream = kwargs.get("stream", False)
-        if not stream:
-            non_streaming_response_value = await anext(response)
-            return non_streaming_response_value
-        return response
-
-
-# This wraps 0.*.* versions of the openai module, eg https://github.com/openai/openai-python/tree/v0.28.1
-class OpenAIV0Wrapper(NamedWrapper):
-    def __init__(self, openai, tracer):
-        super().__init__(openai)
-        self.tracer = tracer
-        self.ChatCompletion = ChatCompletionV0Wrapper(
-            openai.ChatCompletion, tracer
-        )
-        self.Embedding = EmbeddingV0Wrapper(openai.Embedding, tracer)
-
-
-class CompletionsV1Wrapper(NamedWrapper):
-    def __init__(self, completions, tracer):
+class CompletionsWrapper(NamedWrapper[Completions]):
+    def __init__(
+        self,
+        completions: Completions,
+        tracer: LastMileTracer,
+    ):
         self.__completions = completions
         self.tracer = tracer
         super().__init__(completions)
 
-    def create(self, *args, **kwargs):
-        response = ChatCompletionWrapper(
+    def create(
+        self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs
+    ) -> ChatCompletion | Stream[ChatCompletionChunk]:
+        # response: Generator[ChatCompletion, Any, Any] | Stream[ChatCompletionChunk] = cast(
+        #     ChatCompletion | Stream[ChatCompletionChunk],
+        #     ChatCompletionWrapperImpl(
+        #         self.__completions.create,
+        #         None,
+        #         self.tracer,
+        #     ).create(*args, **kwargs),
+        # )
+        response = ChatCompletionWrapperImpl(
             self.__completions.create,
-            None,
             self.tracer,
         ).create(*args, **kwargs)
 
@@ -481,28 +471,33 @@ class CompletionsV1Wrapper(NamedWrapper):
         return response
 
 
-class EmbeddingV1Wrapper(NamedWrapper):
-    def __init__(self, embedding, tracer):
+class EmbeddingWrapper(NamedWrapper[Embeddings]):
+    def __init__(self, embedding: Embeddings, tracer: LastMileTracer):
         self.__embedding = embedding
         self.tracer = tracer
         super().__init__(embedding)
 
-    def create(self, *args, **kwargs):
-        return EmbeddingWrapper(
+    def create(self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs):
+        return EmbeddingWrapperImpl(
             self.__embedding.create, None, self.tracer
         ).create(*args, **kwargs)
 
 
-class AsyncCompletionsV1Wrapper(NamedWrapper):
-    def __init__(self, completions, tracer):
+class AsyncCompletionsWrapper(NamedWrapper[AsyncCompletions]):
+    def __init__(self, completions: AsyncCompletions, tracer: LastMileTracer):
         self.__completions = completions
         self.tracer = tracer
         super().__init__(completions)
 
-    async def create(self, *args, **kwargs):
-        response = ChatCompletionWrapper(
-            None, self.__completions.create, self.tracer
-        ).acreate(*args, **kwargs)
+    async def create(
+        self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs
+    ) -> Coroutine[
+        Any, Any, ChatCompletion | AsyncStream[ChatCompletionChunk]
+    ]:
+        response = AsyncChatCompletionWrapperImpl(
+            self.__completions.create,  # --> Coroutine[Any, Any, ChatCompletion | AsyncStream[ChatCompletionChunk]]
+            self.tracer,
+        ).create(*args, **kwargs)
 
         stream = kwargs.get("stream", False)
         if not stream:
@@ -511,76 +506,87 @@ class AsyncCompletionsV1Wrapper(NamedWrapper):
         return response
 
 
-class AsyncEmbeddingV1Wrapper(NamedWrapper):
-    def __init__(self, embedding, tracer):
+class AsyncEmbeddingWrapper(NamedWrapper[AsyncEmbeddings]):
+    def __init__(self, embedding: AsyncEmbeddings, tracer: LastMileTracer):
         self.__embedding = embedding
         self.tracer = tracer
         super().__init__(embedding)
 
-    async def create(self, *args, **kwargs):
-        return await EmbeddingWrapper(
+    async def create(
+        self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs
+    ) -> Coroutine[Any, Any, CreateEmbeddingResponse]:
+        return await AsyncEmbeddingWrapperImpl(
             None, self.__embedding.create, self.tracer
-        ).acreate(*args, **kwargs)
+        ).create(*args, **kwargs)
 
 
-class ChatV1Wrapper(NamedWrapper[Chat | AsyncChat]):
-    def __init__(self, chat: Chat | AsyncChat, tracer: LastMileTracer):
+class ChatWrapper(NamedWrapper[Chat]):
+    def __init__(self, chat: Chat, tracer: LastMileTracer):
         super().__init__(chat)
-        self.tracer = tracer
-
-        import openai
-
-        if isinstance(chat.completions, AsyncCompletions):
-            self.completions = AsyncCompletionsV1Wrapper(
-                chat.completions, self.tracer
-            )
-        else:
-            self.completions = CompletionsV1Wrapper(
-                chat.completions, self.tracer
-            )
+        self.completions = CompletionsWrapper(chat.completions, tracer)
 
 
-# This wraps 1.*.* versions of the openai module, eg https://github.com/openai/openai-python/tree/v1.1.0
-class OpenAIV1Wrapper(
-    NamedWrapper[openai_module.OpenAI | openai_module.AsyncOpenAI]
-):
+class AsyncChatWrapper(NamedWrapper[AsyncChat]):
+    def __init__(self, chat: AsyncChat, tracer: LastMileTracer):
+        super().__init__(chat)
+        self.completions = AsyncCompletionsWrapper(chat.completions, tracer)
+
+
+class OpenAIWrapper(NamedWrapper[openai.OpenAI]):
     def __init__(
         self,
-        client: openai_module.OpenAI | openai_module.AsyncOpenAI,
+        client: openai.OpenAI,
         tracer: LastMileTracer,
     ):
         super().__init__(client)
         self.tracer: LastMileTracer = tracer
-
-        self.chat = ChatV1Wrapper(client.chat, self.tracer)
-
-        if isinstance(client.embeddings, AsyncEmbeddings):
-            self.embeddings = AsyncEmbeddingV1Wrapper(
-                client.embeddings, self.tracer
-            )
-        else:
-            self.embeddings = EmbeddingV1Wrapper(
-                client.embeddings, self.tracer
-            )
+        self.chat = ChatWrapper(client.chat, self.tracer)
+        self.embeddings = EmbeddingWrapper(client.embeddings, self.tracer)
 
 
-def wrap(
-    client_or_module: openai_module.OpenAI | openai_module.AsyncOpenAI,
-    tracer: LastMileTracer,
-) -> OpenAIV0Wrapper | OpenAIV1Wrapper:
-    """
-    Wrap the openai module (pre v1) or OpenAI client (post v1) to add tracing.
-
-    :param client_or_module: The openai module or OpenAI client
-    """
-    if hasattr(client_or_module, "chat") and hasattr(
-        client_or_module.chat, "completions"
+class AsyncOpenAIWrapper(NamedWrapper[openai.AsyncOpenAI]):
+    def __init__(
+        self,
+        client: openai.AsyncOpenAI,
+        tracer: LastMileTracer,
     ):
-        return OpenAIV1Wrapper(client_or_module, tracer)
-    return OpenAIV0Wrapper(client_or_module, tracer)
+        super().__init__(client)
+        self.tracer: LastMileTracer = tracer
+        self.chat = AsyncChatWrapper(client.chat, self.tracer)
+        self.embeddings = AsyncEmbeddingWrapper(client.embeddings, self.tracer)
 
 
-wrap_openai = wrap
+def wrap_openai(
+    client: openai.OpenAI | openai.AsyncOpenAI,
+    tracer: LastMileTracer,
+) -> OpenAIWrapper | AsyncOpenAIWrapper:
+    """
+    Wrap an OpenAI Client to add LastMileTracer so that
+    any calls to it will contain tracing data.
+
+    Currently only v1 API is supported, which was released November 6, 2023:
+        https://stackoverflow.com/questions/77435356/openai-api-new-version-v1-of-the-openai-python-package-appears-to-contain-bre
+    We also only support `/v1/chat/completions` api and not `/v1/completions`
+
+    :param client: OpenAI client created using openai.OpenAI()
+
+    Example usage:
+    ```python
+    import openai
+    from tracing_auto_instrumentation.openai import wrap_openai
+    from lastmile_eval.rag.debugger.tracing.sdk import get_lastmile_tracer
+
+    tracer = get_lastmile_tracer(
+        tracer_name="my-tracer-name",
+        lastmile_api_token="my-lastmile-api-token",
+    )
+    client = wrap_openai(openai.OpenAI(), tracer)
+    # Use client as you would normally use the OpenAI client
+    ```
+    """
+    if isinstance(client, openai.OpenAI):
+        return OpenAIWrapper(client, tracer)
+    return AsyncOpenAIWrapper(client, tracer)
 
 
 ### Help methods
