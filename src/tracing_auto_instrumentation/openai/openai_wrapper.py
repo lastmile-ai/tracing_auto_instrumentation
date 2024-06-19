@@ -126,6 +126,9 @@ class ChatCompletionWrapper:
                         input=rag_event_input,
                         output=accumulated_text,
                         event_data=json.loads(rag_event_input),
+                        # TODO: Support tool calls
+                        # TODO: Use enum from lastmile-eval package
+                        span_kind="query",
                     )
 
                 yield from gen()
@@ -163,6 +166,9 @@ class ChatCompletionWrapper:
                         input=rag_event_input,
                         output=output,
                         event_data=json.loads(rag_event_input),
+                        # TODO: Support tool calls
+                        # TODO: Use enum from lastmile-eval package
+                        span_kind="query",
                     )
                 except Exception as e:
                     # TODO log this
@@ -241,6 +247,9 @@ class ChatCompletionWrapper:
                         input=rag_event_input,
                         output=accumulated_text,
                         event_data=json.loads(rag_event_input),
+                        # TODO: Support tool calls
+                        # TODO: Use enum from lastmile-eval package
+                        span_kind="query",
                     )
 
                 async for chunk in gen():
@@ -276,6 +285,9 @@ class ChatCompletionWrapper:
                         input=rag_event_input,
                         output=output,  # type: ignore
                         event_data=json.loads(rag_event_input),
+                        # TODO: Support tool calls
+                        # TODO: Use enum from lastmile-eval package
+                        span_kind="query",
                     )
                 except Exception as e:
                     # TODO log this
@@ -579,7 +591,9 @@ def _add_rag_event_with_output(
     input: Optional[Any] = None,
     output: Optional[Any] = None,
     event_data: dict[Any, Any] | None = None,
+    span_kind: Optional[str] = None,
 ) -> None:
+    # TODO: Replace with rag-specific API instead of add_rag_event_for_span
     if output is not None:
         tracer.add_rag_event_for_span(
             event_name,
@@ -587,6 +601,7 @@ def _add_rag_event_with_output(
             input=input,
             output=output,
             should_also_save_in_span=True,
+            span_kind=span_kind,
         )
     else:
         tracer.add_rag_event_for_span(
@@ -594,4 +609,5 @@ def _add_rag_event_with_output(
             span,  # type: ignore
             event_data=event_data,
             should_also_save_in_span=True,
+            span_kind=span_kind,
         )

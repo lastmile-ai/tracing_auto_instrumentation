@@ -308,9 +308,8 @@ class _LastMileLangChainTracer(OpenInferenceTracer):
                     span=span,
                     event_data=serializable_payload,
                     should_also_save_in_span=True,
+                    span_kind=span_kind,
                 )
-
-            span.set_attribute(LASTMILE_SPAN_KIND_KEY_NAME, span_kind)
 
         # n.b. we can't use real time because the handler may be called in a background thread.
         end_time_utc_nano = (
