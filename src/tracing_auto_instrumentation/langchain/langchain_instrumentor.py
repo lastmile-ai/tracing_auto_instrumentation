@@ -2,6 +2,7 @@ from typing import Any, Dict, Callable, Collection, Optional, Type, Union
 from collections import defaultdict
 
 import json
+import logging
 
 # LangChain
 from langchain_core.callbacks import BaseCallbackManager
@@ -19,7 +20,6 @@ from openinference.instrumentation.langchain.version import __version__
 
 # OpenTelemetry
 from opentelemetry import context as context_api
-from opentelemetry import trace as trace_api
 
 from opentelemetry.context import _SUPPRESS_INSTRUMENTATION_KEY
 from opentelemetry.sdk.trace import Span
@@ -36,6 +36,11 @@ from lastmile_eval.rag.debugger.api import (
     LastMileTracer,
     RetrievedNode,
 )  # TODO(b7r6): fix typing...
+
+
+# logger
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
 
@@ -95,8 +100,6 @@ class LangChainInstrumentor(BaseInstrumentor):
 # TODO(b7r6): this is an inherently brittle design because of the overrides on private
 class _LastMileLangChainTracer(OpenInferenceTracer):
     def _end_trace(self, run: Run) -> None:
-        logger.info(f"ending langchain trace: {run.id}")
-        logger.info(f"ending langchain trace: {run}")
 
         self.run_map.pop(str(run.id), None)
 
@@ -104,7 +107,6 @@ class _LastMileLangChainTracer(OpenInferenceTracer):
             return
 
         span = self._spans_by_run.pop(run.id, None)
-        logger.info(f"while ending trace, got span: {span}")
 
         if not span:
             return
@@ -112,8 +114,6 @@ class _LastMileLangChainTracer(OpenInferenceTracer):
         self._handle_span(run, span)
 
     def _handle_span(self, run: Run, span: Span):
-        logger.info(f"handling span langchain trace: {span}")
-
         # update span
         try:
             _update_span(span, run)
@@ -123,8 +123,6 @@ class _LastMileLangChainTracer(OpenInferenceTracer):
         span_kind = str(
             "agent" if "agent" in run.name.lower() else (run.run_type)
         )
-
-        logger.info(f"handling span kind: {span_kind}")
 
         # for supported span types, trace that...
         if _should_process(span_kind):
