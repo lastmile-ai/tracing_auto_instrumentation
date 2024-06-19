@@ -407,22 +407,19 @@ def _finish_tracing(
             # elif event_type == CBEventType.FUNCTION_CALL:
             #     tracer.add_tool_call_event(span_attributes[TOOL_NAME])
             else:
+                span_kind = str(event_data.event_type.value)
                 tracer.add_rag_event_for_span(
-                    event_name=str(event_data.event_type),
+                    event_name=span_kind,
                     span=span,
                     event_data=param_set_payload,
                     should_also_save_in_span=True,
+                    span_kind=span_kind,
                 )
             tracer.register_params(
                 params=param_set_payload,
                 should_also_save_in_span=True,
                 span=span,
             )
-
-        # Save span kind into span attribute, but don't add it to trace-level
-        # params (since that should be for trace-level data) or rag span event
-        # (since it's already used for the event name there)
-        span.set_attribute(LASTMILE_SPAN_KIND_KEY_NAME, event_data.event_type)
 
     except Exception:
         logger.exception(
