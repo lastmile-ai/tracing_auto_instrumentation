@@ -1,4 +1,8 @@
 langchain
+langchain_community
 langchain_core
+langchain_experimental
 langchain_openai
+numexpr
 openinference-instrumentation-langchain
+wikipedia

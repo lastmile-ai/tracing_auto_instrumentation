@@ -1,6 +1,7 @@
 # Common dependencies
-lastmile_eval
 html2text
+lastmile_eval
 pandas
 pyarrow
 tqdm
+wget
