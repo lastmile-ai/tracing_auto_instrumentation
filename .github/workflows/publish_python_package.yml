@@ -45,7 +45,7 @@ jobs:
           git commit -m "Increment version to $version"
           git push
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_WORKFLOW_TOKEN }}
       - name: Build Package
         run: |
           pip install build && python -m build
