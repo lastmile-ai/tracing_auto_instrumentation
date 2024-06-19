@@ -2,7 +2,6 @@ from typing import Any, Dict, Callable, Collection, Optional, Type, Union
 from collections import defaultdict
 
 import json
-import logging
 
 # LangChain
 from langchain_core.callbacks import BaseCallbackManager
@@ -36,7 +35,6 @@ from wrapt import wrap_function_wrapper
 from lastmile_eval.rag.debugger.api import (
     LastMileTracer,
     RetrievedNode,
-    TextEmbedding,
 )  # TODO(b7r6): fix typing...
 
 from lastmile_eval.rag.debugger.tracing import get_lastmile_tracer
@@ -46,10 +44,6 @@ from lastmile_eval.rag.debugger.common.utils import (
 )
 
 from ..utils import DEFAULT_TRACER_NAME_PREFIX
-
-# logger
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.NullHandler())
 
 
 class LangChainInstrumentor(BaseInstrumentor):
@@ -189,6 +183,124 @@ class _LastMileLangChainTracer(OpenInferenceTracer):
                     should_also_save_in_span=True,
                     metadata={"top_k": len(retrieved_nodes)},
                 )
+            elif "llm" == span_kind:
+                resolved_prompt = None
+                output = span_attributes["output.value"]
+                # Wow what a hack just to deal with WatsonxLLM
+                if "WatsonxLLM" in span._name:
+                    # Handle Watson only!
+                    prompts = json.loads(
+                        span_attributes.get("input.value")
+                    ).get("prompts")
+                    if prompts:
+                        resolved_prompt = prompts[0]
+                        output = json.loads(output)
+                        output_text = (
+                            output.get("generations")[0][0].get("text").strip()
+                        )
+                        extra_info = output.get("llm_output") or {}
+                        model_id = extra_info.get("model_id")
+                        token_usage = extra_info.get("token_usage")
+                        generated_token_count = token_usage.get(
+                            "generated_token_count"
+                        )
+                        input_token_count = token_usage.get(
+                            "input_token_count"
+                        )
+                        metadata = {
+                            "model_id": model_id,
+                            "generated_token_count": generated_token_count,
+                            "input_token_count": input_token_count,
+                            "llm.invocation_parameters": span_attributes.get("llm.invocation_parameters"),  # type: ignore
+                        }
+                        self._tracer.add_query_event(
+                            query=str(resolved_prompt),  # type: ignore
+                            # TODO: Scan for the system prompt in the input messages
+                            # system_prompt=...
+                            llm_output=output_text,
+                            span=span,
+                            should_also_save_in_span=True,
+                            metadata=metadata,
+                        )
+
+                elif isinstance(output, str):
+                    # If the output is a string, then it's answering a prompt/command
+                    metadata = {}
+
+                    # Check if a template exists and resolve if it does
+                    template: Optional[str] = span_attributes.get(
+                        "llm.prompt_template.template"
+                    )
+                    if template is not None:
+                        # Get the user query from prompt template
+                        template_variables = span_attributes[
+                            "llm.prompt_template.variables"
+                        ]
+                        if isinstance(template_variables, str):
+                            template_variables = json.loads(template_variables)
+
+                        resolved_prompt = template
+                        for key, value in template_variables.items():
+                            key_with_brackets = f"{{{key}}}"
+                            resolved_prompt = resolved_prompt.replace(
+                                key_with_brackets,
+                                value,
+                            )
+                        metadata.update(
+                            {
+                                "llm.prompt_template.template": template,
+                                "llm.prompt_template.variables": template_variables,
+                            }
+                        )
+                    else:
+                        # Get the user query from last user message
+
+                        # message contains as key the index of the message
+                        # and value the message info
+                        # Example: {
+                        #   0: {'content': 'What is (121 * 3)', 'role': 'user'},
+                        #   1: {'arguments': {'a': 121, 'b': 3}, 'name': 'multiply'},
+                        #   2: {'content': 363, 'name': 'multiply', 'role': 'tool'},
+                        # }
+                        input_messages: defaultdict[
+                            int, dict[str, Union[str, dict[str, Any]]]
+                        ] = defaultdict(dict)
+                        for key, value in span_attributes.items():
+                            if "llm.input_messages" in key:
+                                # Example of key would be "llm.input_messages.0.message.role"
+                                key_parts = key.split(".")
+                                text_index: int = -1
+                                for part in key_parts:
+                                    if part.isnumeric():
+                                        text_index = int(part)
+                                if text_index == -1:
+                                    continue
+
+                                info_type = key.split(".")[-1]
+                                input_messages[text_index][info_type] = value
+
+                        # Find the most recent user message
+                        for key, message in dict(
+                            sorted(input_messages.items(), reverse=True)
+                        ).items():
+                            role = message.get("role")
+                            if role is None or role != "user":
+                                continue
+                            resolved_prompt = message.get("content")
+
+                    self._tracer.add_query_event(
+                        query=str(resolved_prompt),  # type: ignore
+                        # TODO: Scan for the system prompt in the input messages
+                        # system_prompt=...
+                        llm_output=output,
+                        span=span,
+                        should_also_save_in_span=True,
+                        metadata=metadata,
+                    )
+                else:
+                    # TODO: Support tool calls
+                    pass
+
             else:
                 self._tracer.add_rag_event_for_span(
                     event_name=span_kind,
