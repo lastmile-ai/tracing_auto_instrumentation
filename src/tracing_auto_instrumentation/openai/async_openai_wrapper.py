@@ -5,10 +5,12 @@ import json
 import time
 from typing import (
     Any,
+    Awaitable,
     Callable,
-    Coroutine,
+    AsyncGenerator,
     ParamSpecArgs,
     ParamSpecKwargs,
+    cast,
 )
 
 import openai
@@ -43,70 +45,33 @@ class AsyncOpenAIWrapper(Wrapper[openai.AsyncOpenAI]):
         tracer: LastMileTracer,
     ):
         super().__init__(client)
-        self.tracer: LastMileTracer = tracer
-        self.embeddings = AsyncEmbeddingWrapper(client.embeddings, self.tracer)
-        self.chat = AsyncChatWrapper(client.chat, self.tracer)
+        self._tracer: LastMileTracer = tracer
+        self.embeddings = AsyncEmbeddingWrapper(
+            client.embeddings, self._tracer
+        )
+        self.chat = AsyncChatWrapper(client.chat, self._tracer)
 
 
 class AsyncEmbeddingWrapper(Wrapper[AsyncEmbeddings]):
     def __init__(self, embedding: AsyncEmbeddings, tracer: LastMileTracer):
-        self.__embedding = embedding
-        self.tracer = tracer
         super().__init__(embedding)
+        self._embedding = embedding
+        self._tracer = tracer
 
     async def create(
         self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs
-    ) -> Coroutine[Any, Any, CreateEmbeddingResponse]:
-        return await AsyncEmbeddingWrapperImpl(
-            None, self.__embedding.create, self.tracer
-        ).create(*args, **kwargs)
+    ) -> CreateEmbeddingResponse:
+        return await self._create_impl(*args, **kwargs)
 
-
-class AsyncChatWrapper(Wrapper[AsyncChat]):
-    def __init__(self, chat: AsyncChat, tracer: LastMileTracer):
-        super().__init__(chat)
-        self.completions = AsyncCompletionsWrapper(chat.completions, tracer)
-
-
-class AsyncCompletionsWrapper(Wrapper[AsyncCompletions]):
-    def __init__(self, completions: AsyncCompletions, tracer: LastMileTracer):
-        self.__completions = completions
-        self.tracer = tracer
-        super().__init__(completions)
-
-    async def create(
+    async def _create_impl(
         self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs
-    ) -> Coroutine[
-        Any, Any, ChatCompletion | AsyncStream[ChatCompletionChunk]
-    ]:
-        response = AsyncChatCompletionWrapperImpl(
-            self.__completions.create,  # --> Coroutine[Any, Any, ChatCompletion | AsyncStream[ChatCompletionChunk]]
-            self.tracer,
-        ).create(*args, **kwargs)
-
-        stream = kwargs.get("stream", False)
-        if not stream:
-            non_streaming_response_value = await anext(response)
-            return non_streaming_response_value
-        return response
-
-
-class AsyncEmbeddingWrapperImpl:
-    def __init__(
-        self,
-        create_fn: Callable[..., Coroutine[Any, Any, CreateEmbeddingResponse]],
-        tracer: LastMileTracer,
-    ):
-        self.create_fn = create_fn
-        self.tracer: LastMileTracer = tracer
-
-    async def create(self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs):
+    ) -> CreateEmbeddingResponse:
         params = parse_params(kwargs)
 
-        with self.tracer.start_as_current_span(
+        with self._tracer.start_as_current_span(
             "async-embedding-create"
         ) as span:
-            raw_response = await self.create_fn(*args, **kwargs)
+            raw_response = await self._embedding.create(*args, **kwargs)
             log_response = (
                 raw_response
                 if isinstance(raw_response, dict)
@@ -125,25 +90,45 @@ class AsyncEmbeddingWrapperImpl:
             return raw_response
 
 
-class AsyncChatCompletionWrapperImpl:
-    def __init__(
-        self,
-        create_fn: Callable[  # TODO: Map this directly to OpenAI package
-            ...,
-            Coroutine[
-                Any, Any, ChatCompletion | AsyncStream[ChatCompletionChunk]
-            ],
-        ],
-        tracer: LastMileTracer,
-    ):
-        self.create_fn = create_fn
-        self.tracer: LastMileTracer = tracer
+class AsyncChatWrapper(Wrapper[AsyncChat]):
+    def __init__(self, chat: AsyncChat, tracer: LastMileTracer):
+        super().__init__(chat)
+        self.completions = AsyncCompletionsWrapper(chat.completions, tracer)
 
-    async def create(self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs):
+
+class AsyncCompletionsWrapper(Wrapper[AsyncCompletions]):
+    def __init__(self, completions: AsyncCompletions, tracer: LastMileTracer):
+        super().__init__(completions)
+        self.create_fn: Callable[  # TODO: Map this directly to OpenAI package
+            ...,
+            Awaitable[ChatCompletion | AsyncStream[ChatCompletionChunk]],
+        ] = completions.create
+        self._tracer = tracer
+
+    async def create(
+        self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs
+    ) -> ChatCompletion | AsyncStream[ChatCompletionChunk]:
+        response = self._create_impl(*args, **kwargs)
+
+        stream = kwargs.get("stream", False)
+        if not stream:
+            non_streaming_response_value = cast(
+                ChatCompletion, await anext(response)
+            )
+            return non_streaming_response_value
+        return cast(AsyncStream[ChatCompletionChunk], response)
+
+    async def _create_impl(
+        self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs
+    ) -> AsyncGenerator[
+        ChatCompletion  # for "non-streaming" only that we parse later
+        | ChatCompletionChunk,
+        Any,
+    ]:
         params = parse_params(kwargs)
 
         rag_event_input = json_serialize_anything(params)
-        with self.tracer.start_as_current_span(
+        with self._tracer.start_as_current_span(
             "async-chat-completion-create"
         ) as span:
             span.set_attributes(flatten_json(params))
@@ -186,7 +171,7 @@ class AsyncChatCompletionWrapperImpl:
                         # span.set_attributes(flatten_json(stream_output))
                         span.set_attribute("output_content", accumulated_text)
                     add_rag_event_with_output(
-                        self.tracer,
+                        self._tracer,
                         "chat_completion_acreate_stream",
                         span,
                         input=rag_event_input,
@@ -224,7 +209,7 @@ class AsyncChatCompletionWrapperImpl:
                 try:
                     output = log_response["choices"][0]["message"]["content"]
                     add_rag_event_with_output(
-                        self.tracer,
+                        self._tracer,
                         "chat_completion_acreate",
                         span,
                         input=rag_event_input,
