@@ -1,13 +1,16 @@
+# pylint: disable=missing-module-docstring
+# pylint: disable=missing-class-docstring
+# pylint: disable=missing-function-docstring
 import json
 from typing import Any, Generic, TypeVar
 
 
-T_INV = TypeVar("T_INV")
+T_co = TypeVar("T_co", covariant=True)
 DEFAULT_TRACER_NAME_PREFIX = "LastMileTracer"
 
 
-class NamedWrapper(Generic[T_INV]):
-    def __init__(self, wrapped: T_INV):
+class NamedWrapper(Generic[T_co]):
+    def __init__(self, wrapped: T_co):
         self.__wrapped = wrapped
 
     def __getattr__(self, name: str):
