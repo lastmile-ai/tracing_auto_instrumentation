@@ -11,10 +11,9 @@ DEFAULT_TRACER_NAME_PREFIX = "LastMileTracer"
 
 class Wrapper(Generic[T_co]):
     """
-    Parent class used by a wrapper class to wrap an instance of type T_co,
-    allowing that wrapper to access the proxy object's attributes
-    directly as if the wrapper class was the proxy object itself using the
-    same interface.
+    Parent class used by a proxy class to wrap an instance of type T_co,
+    allowing that proxy to access the object's attributes directly with
+    the same interface as if the proxy class was the object itself.
 
     Example:
     ```python
@@ -44,11 +43,14 @@ class Wrapper(Generic[T_co]):
     ```
     """
 
-    def __init__(self, wrapped: T_co):
-        self.__wrapped = wrapped
+    def __init__(self, obj: T_co):
+        self._obj = obj
 
     def __getattr__(self, name: str):
-        return getattr(self.__wrapped, name)
+        return getattr(self._obj, name)
+
+    # TODO (rossdan): Add __setattr__ and __delattr__ to allow
+    # setting and deleting attributes on the
 
 
 def json_serialize_anything(obj: Any) -> str:
