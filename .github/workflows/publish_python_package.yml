@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       bumpPatchVersion:
-        description: "Auto-increment patch version and commit changes."
+        description: "Auto-increment patch version and commit changes. (This is broken)"
         required: true
         default: "false"
         type: choice
