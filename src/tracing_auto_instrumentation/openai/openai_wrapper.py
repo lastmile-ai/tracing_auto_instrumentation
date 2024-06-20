@@ -23,7 +23,7 @@ from openai.types.chat import ChatCompletionChunk, ChatCompletion
 from openai import Stream
 
 from ..utils import (
-    NamedWrapper,
+    Wrapper,
     json_serialize_anything,
 )
 
@@ -34,7 +34,7 @@ from .shared import (
 )
 
 
-class OpenAIWrapper(NamedWrapper[openai.OpenAI]):
+class OpenAIWrapper(Wrapper[openai.OpenAI]):
     def __init__(
         self,
         client: openai.OpenAI,
@@ -46,11 +46,11 @@ class OpenAIWrapper(NamedWrapper[openai.OpenAI]):
         self.embeddings = EmbeddingWrapper(client.embeddings, self.tracer)
 
 
-class EmbeddingWrapper(NamedWrapper[Embeddings]):
+class EmbeddingWrapper(Wrapper[Embeddings]):
     def __init__(self, embedding: Embeddings, tracer: LastMileTracer):
+        super().__init__(embedding)
         self.__embedding = embedding
         self.tracer = tracer
-        super().__init__(embedding)
 
     def create(self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs):
         return EmbeddingWrapperImpl(
@@ -58,21 +58,21 @@ class EmbeddingWrapper(NamedWrapper[Embeddings]):
         ).create(*args, **kwargs)
 
 
-class ChatWrapper(NamedWrapper[Chat]):
+class ChatWrapper(Wrapper[Chat]):
     def __init__(self, chat: Chat, tracer: LastMileTracer):
         super().__init__(chat)
         self.completions = CompletionsWrapper(chat.completions, tracer)
 
 
-class CompletionsWrapper(NamedWrapper[Completions]):
+class CompletionsWrapper(Wrapper[Completions]):
     def __init__(
         self,
         completions: Completions,
         tracer: LastMileTracer,
     ):
+        super().__init__(completions)
         self.__completions = completions
         self.tracer = tracer
-        super().__init__(completions)
 
     def create(
         self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs
@@ -242,7 +242,7 @@ class EmbeddingWrapperImpl:
         params = parse_params(kwargs)
         # params_flat = flatten_json(params)
 
-        with self.tracer.start_as_current_span("embedding") as span:
+        with self.tracer.start_as_current_span("embedding-create") as span:
             raw_response = self.create_fn(*args, **kwargs)
             log_response = (
                 raw_response

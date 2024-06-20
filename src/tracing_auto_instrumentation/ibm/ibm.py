@@ -14,7 +14,7 @@ from lastmile_eval.rag.debugger.tracing.decorators import (
 
 
 from tracing_auto_instrumentation.utils import (
-    NamedWrapper,
+    Wrapper,
 )
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ class GenerateTextWrapper:
             return response
 
 
-class IBMWatsonXModelWrapper(NamedWrapper[Model]):
+class IBMWatsonXModelWrapper(Wrapper[Model]):
     def __init__(self, ibm_watsonx_model: Model, tracer: LastMileTracer):
         super().__init__(ibm_watsonx_model)
         self.ibm_watsonx_model = ibm_watsonx_model
