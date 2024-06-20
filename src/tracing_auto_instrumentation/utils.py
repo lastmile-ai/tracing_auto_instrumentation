@@ -9,7 +9,41 @@ T_co = TypeVar("T_co", covariant=True)
 DEFAULT_TRACER_NAME_PREFIX = "LastMileTracer"
 
 
-class NamedWrapper(Generic[T_co]):
+class Wrapper(Generic[T_co]):
+    """
+    Parent class used by a wrapper class to wrap an instance of type T_co,
+    allowing that wrapper to access the proxy object's attributes
+    directly as if the wrapper class was the proxy object itself using the
+    same interface.
+
+    Example:
+    ```python
+    obj = MyObject()
+    obj.get_id() # returns 1
+
+    class MyProxy(Wrapper[MyObject]):
+        def __init__(self, my_object: MyObject):
+            super().__init__(my_object)
+
+    proxy = MyProxy(obj)
+    proxy.get_id() # calls obj.get_id() and returns 1
+    ```
+
+    If we didn't have this, we would need to have to manually define each
+    method for the proxy directly:
+    ```python
+    class MyProxy():
+        def __init__(self, my_object: MyObject):
+            self.my_object = my_object
+
+        def get_id(self):
+            return self.my_object.get_id()
+
+    proxy = MyProxy(obj)
+    proxy.get_id() # calls proxy.my_object.get_id() and returns 1
+    ```
+    """
+
     def __init__(self, wrapped: T_co):
         self.__wrapped = wrapped
 

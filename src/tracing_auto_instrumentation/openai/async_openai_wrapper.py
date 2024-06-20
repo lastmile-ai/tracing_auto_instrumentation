@@ -25,7 +25,7 @@ from openai.types.chat import ChatCompletionChunk, ChatCompletion
 from openai import AsyncStream
 
 from ..utils import (
-    NamedWrapper,
+    Wrapper,
     json_serialize_anything,
 )
 
@@ -36,7 +36,7 @@ from .shared import (
 )
 
 
-class AsyncOpenAIWrapper(NamedWrapper[openai.AsyncOpenAI]):
+class AsyncOpenAIWrapper(Wrapper[openai.AsyncOpenAI]):
     def __init__(
         self,
         client: openai.AsyncOpenAI,
@@ -48,7 +48,7 @@ class AsyncOpenAIWrapper(NamedWrapper[openai.AsyncOpenAI]):
         self.chat = AsyncChatWrapper(client.chat, self.tracer)
 
 
-class AsyncEmbeddingWrapper(NamedWrapper[AsyncEmbeddings]):
+class AsyncEmbeddingWrapper(Wrapper[AsyncEmbeddings]):
     def __init__(self, embedding: AsyncEmbeddings, tracer: LastMileTracer):
         self.__embedding = embedding
         self.tracer = tracer
@@ -62,13 +62,13 @@ class AsyncEmbeddingWrapper(NamedWrapper[AsyncEmbeddings]):
         ).create(*args, **kwargs)
 
 
-class AsyncChatWrapper(NamedWrapper[AsyncChat]):
+class AsyncChatWrapper(Wrapper[AsyncChat]):
     def __init__(self, chat: AsyncChat, tracer: LastMileTracer):
         super().__init__(chat)
         self.completions = AsyncCompletionsWrapper(chat.completions, tracer)
 
 
-class AsyncCompletionsWrapper(NamedWrapper[AsyncCompletions]):
+class AsyncCompletionsWrapper(Wrapper[AsyncCompletions]):
     def __init__(self, completions: AsyncCompletions, tracer: LastMileTracer):
         self.__completions = completions
         self.tracer = tracer
@@ -103,7 +103,9 @@ class AsyncEmbeddingWrapperImpl:
     async def create(self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs):
         params = parse_params(kwargs)
 
-        with self.tracer.start_as_current_span("async-embedding") as span:
+        with self.tracer.start_as_current_span(
+            "async-embedding-create"
+        ) as span:
             raw_response = await self.create_fn(*args, **kwargs)
             log_response = (
                 raw_response
