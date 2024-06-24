@@ -49,38 +49,13 @@ class OpenAIWrapper(Wrapper[openai.OpenAI]):
 class EmbeddingWrapper(Wrapper[Embeddings]):
     def __init__(self, embedding: Embeddings, tracer: LastMileTracer):
         super().__init__(embedding)
-        self._embedding = embedding
+        self.__embedding = embedding
         self.tracer = tracer
 
-    def create(
-        self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs
-    ) -> CreateEmbeddingResponse:
-        return self._create_impl(*args, **kwargs)
-
-    def _create_impl(
-        self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs
-    ) -> CreateEmbeddingResponse:
-        params = parse_params(kwargs)
-        # params_flat = flatten_json(params)
-
-        with self.tracer.start_as_current_span("embedding-create") as span:
-            raw_response = self._embedding.create(*args, **kwargs)
-            log_response = (
-                raw_response
-                if isinstance(raw_response, dict)
-                else raw_response.model_dump()
-            )
-            span.set_attributes(
-                {
-                    "tokens": log_response["usage"]["total_tokens"],
-                    "prompt_tokens": log_response["usage"]["prompt_tokens"],
-                    "embedding_length": len(
-                        log_response["data"][0]["embedding"]
-                    ),
-                    **flatten_json(params),
-                },
-            )
-            return raw_response
+    def create(self, *args: ParamSpecArgs, **kwargs: ParamSpecKwargs):
+        return EmbeddingWrapperImpl(
+            self.__embedding.create, None, self.tracer
+        ).create(*args, **kwargs)
 
 
 class ChatWrapper(Wrapper[Chat]):
