@@ -10,7 +10,6 @@ from typing import (
     AsyncGenerator,
     ParamSpecArgs,
     ParamSpecKwargs,
-    Optional,
     cast,
 )
 
@@ -24,11 +23,7 @@ from openai.resources.embeddings import (
     AsyncEmbeddings,
 )
 from openai.types import CreateEmbeddingResponse
-from openai.types.chat import (
-    ChatCompletionChunk,
-    ChatCompletionMessageParam,
-    ChatCompletion,
-)
+from openai.types.chat import ChatCompletionChunk, ChatCompletion
 from openai import AsyncStream
 
 from ..utils import (
@@ -132,16 +127,7 @@ class AsyncCompletionsWrapper(Wrapper[AsyncCompletions]):
     ]:
         params = parse_params(kwargs)
 
-        messages: list[ChatCompletionMessageParam] = kwargs["messages"] if "messages" in kwargs else []  # type: ignore
-        user_prompt: Optional[str] = None
-        for message in reversed(messages):
-            if message["role"] == "user":
-                # TODO (rossdan): Handle Iterable[ChatCompletionContentPartParam] use case
-                if isinstance(message["content"], str):
-                    user_prompt = message["content"]
-                break
-        rag_event_serialized = json_serialize_anything(params)
-
+        rag_event_input = json_serialize_anything(params)
         with self._tracer.start_as_current_span(
             "async-chat-completion-create"
         ) as span:
@@ -188,9 +174,9 @@ class AsyncCompletionsWrapper(Wrapper[AsyncCompletions]):
                         self._tracer,
                         "chat_completion_acreate_stream",
                         span,
-                        input=user_prompt or rag_event_serialized,
+                        input=rag_event_input,
                         output=accumulated_text,
-                        event_data=json.loads(rag_event_serialized),
+                        event_data=json.loads(rag_event_input),
                         # TODO: Support tool calls
                         # TODO: Use enum from lastmile-eval package
                         span_kind="query",
@@ -226,9 +212,9 @@ class AsyncCompletionsWrapper(Wrapper[AsyncCompletions]):
                         self._tracer,
                         "chat_completion_acreate",
                         span,
-                        input=user_prompt or rag_event_serialized,
+                        input=rag_event_input,
                         output=output,  # type: ignore
-                        event_data=json.loads(rag_event_serialized),
+                        event_data=json.loads(rag_event_input),
                         # TODO: Support tool calls
                         # TODO: Use enum from lastmile-eval package
                         span_kind="query",
