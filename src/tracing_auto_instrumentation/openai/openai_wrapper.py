@@ -7,7 +7,6 @@ from typing import (
     Callable,
     ParamSpecArgs,
     ParamSpecKwargs,
-    Optional,
 )
 
 import openai
@@ -20,11 +19,7 @@ from openai.resources.embeddings import (
     Embeddings,
 )
 from openai.types import CreateEmbeddingResponse
-from openai.types.chat import (
-    ChatCompletionChunk,
-    ChatCompletionMessageParam,
-    ChatCompletion,
-)
+from openai.types.chat import ChatCompletionChunk, ChatCompletion
 from openai import Stream
 
 from ..utils import (
@@ -142,16 +137,7 @@ class ChatCompletionWrapperImpl:
         params = parse_params(kwargs)
         params_flat = flatten_json(params)
 
-        messages: list[ChatCompletionMessageParam] = kwargs["messages"] if "messages" in kwargs else []  # type: ignore
-        user_prompt: Optional[str] = None
-        for message in reversed(messages):
-            if message["role"] == "user":
-                # TODO (rossdan): Handle Iterable[ChatCompletionContentPartParam] use case
-                if isinstance(message["content"], str):
-                    user_prompt = message["content"]
-                break
-        rag_event_serialized = json_serialize_anything(params)
-
+        rag_event_input = json_serialize_anything(params)
         with self.tracer.start_as_current_span(
             "chat-completion-create"
         ) as span:
@@ -195,9 +181,9 @@ class ChatCompletionWrapperImpl:
                         self.tracer,
                         "chat_completion_create_stream",
                         span,
-                        input=user_prompt or rag_event_serialized,
+                        input=rag_event_input,
                         output=accumulated_text,
-                        event_data=json.loads(rag_event_serialized),
+                        event_data=json.loads(rag_event_input),
                         # TODO: Support tool calls
                         # TODO: Use enum from lastmile-eval package
                         span_kind="query",
@@ -229,15 +215,15 @@ class ChatCompletionWrapperImpl:
                     }
                 )
                 try:
-                    # TODO (rossdan): Handle responses where n > 1
+                    # TODO: Handle responses where n > 1
                     output = log_response["choices"][0]["message"]["content"]
                     add_rag_event_with_output(
                         self.tracer,
                         "chat_completion_create",
                         span,
-                        input=user_prompt or rag_event_serialized,
+                        input=rag_event_input,
                         output=output,
-                        event_data=json.loads(rag_event_serialized),
+                        event_data=json.loads(rag_event_input),
                         # TODO: Support tool calls
                         # TODO: Use enum from lastmile-eval package
                         span_kind="query",
