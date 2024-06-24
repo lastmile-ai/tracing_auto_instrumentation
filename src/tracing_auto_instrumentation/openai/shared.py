@@ -43,7 +43,6 @@ def add_rag_event_with_output(
     event_data: dict[Any, Any] | None = None,
     span_kind: Optional[str] = None,
 ) -> None:
-    # TODO: Replace with rag-specific API instead of add_rag_event_for_span
     if output is not None:
         # TODO (rossdan): Fill in system prompt
         tracer.add_query_event(
@@ -54,6 +53,7 @@ def add_rag_event_with_output(
             metadata=event_data,
         )
     else:
+        # TODO: Replace with tool_calls API instead of add_rag_event_for_span
         tracer.add_rag_event_for_span(
             event_name,
             span,  # type: ignore
